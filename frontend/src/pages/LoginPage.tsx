@@ -208,7 +208,6 @@ export default function LoginPage() {
                     shape="rectangular"
                     size="large"
                     width="320"
-                    locale="th"
                   />
                 </div>
 
@@ -317,7 +316,6 @@ export default function LoginPage() {
                     shape="rectangular"
                     size="large"
                     width="320"
-                    locale="th"
                   />
                 </div>
 

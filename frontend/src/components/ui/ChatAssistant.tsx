@@ -99,7 +99,7 @@ export function ChatAssistant() {
           .filter((m) => !m.loading)
           .map((m) => ({ role: m.role, content: m.content }))
       ),
-    onSuccess: (res, variables) => {
+    onSuccess: (res) => {
       const { message: aiMsg, products } = res.data as {
         message: string;
         products: Product[];

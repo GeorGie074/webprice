@@ -66,8 +66,6 @@ export default function Navbar() {
   });
   const triggeredCount = ((alertsData?.data as Alert[]) ?? []).filter((a) => a.triggered).length;
 
-  const isHero = false;
-
   const doSearch = (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;

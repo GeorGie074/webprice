@@ -54,9 +54,9 @@ function effectivePrice(item: LiveResult) {
 // ─── CompareRow ────────────────────────────────────────────────────────────────
 
 function CompareRow({
-  platformId, result, isCheapest,
+  result, isCheapest,
 }: {
-  platformId: string;
+  platformId?: string;
   result: PlatformResult;
   isCheapest: boolean;
 }) {
@@ -268,7 +268,7 @@ export default function LiveSearchPage() {
     setPlatformResults(initial);
 
     // Sequential scraping (browser is singleton — concurrent kills shared context)
-    for (const { id, label } of ordered) {
+    for (const { id } of ordered) {
       setPlatformResults((prev) => ({
         ...prev,
         [id]: { ...prev[id], status: "loading" },

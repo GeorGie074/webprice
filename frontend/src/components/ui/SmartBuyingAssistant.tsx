@@ -9,7 +9,6 @@
  *  • Natural-language summary + tip
  */
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { productsApi } from "../../api";
 import type { PriceInsight, PriceTrend } from "../../types";
