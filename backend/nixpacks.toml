@@ -1,0 +1,27 @@
+[phases.setup]
+nixPkgs = [
+  "chromium",
+  "chromium-driver",
+  "xvfb-run",
+  "nss",
+  "nspr",
+  "atk",
+  "cups",
+  "libdrm",
+  "libxkbcommon",
+  "gtk3",
+  "pango",
+  "cairo",
+  "gdk-pixbuf",
+  "libxcomposite",
+  "libxdamage",
+  "libxrandr",
+  "mesa",
+  "alsa-lib"
+]
+
+[phases.install]
+cmds = ["npm install", "npx playwright install chromium --with-deps"]
+
+[start]
+cmd = "npm run start"
