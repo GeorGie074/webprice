@@ -23,7 +23,8 @@ const PORT = process.env.PORT || 5000;
 // Allow any localhost port in development (handles Vite port 5173, 5174, etc.)
 const ALLOWED_ORIGINS = [
   /^http:\/\/localhost(:\d+)?$/,                        // local dev
-  process.env.FRONTEND_URL,                            // production URL (e.g. https://myapp.vercel.app)
+  /^https:\/\/.*\.vercel\.app$/,                       // all Vercel preview + production URLs
+  process.env.FRONTEND_URL,                            // explicit production URL override
 ].filter(Boolean);
 
 app.use(cors({
