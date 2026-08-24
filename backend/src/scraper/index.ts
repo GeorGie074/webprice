@@ -544,7 +544,10 @@ export async function updateProductPrices(
       //
       // Rules per platform:
       //   • Scraper ran AND found match   → update price/url/inStock, available = true
-      //   • Scraper ran BUT no match      → available = false  (hidden in frontend)
+      //   • Scraper ran BUT no match      → preserve existing price (return base)
+      //                                     Reason: in production (Railway), scrapers can be
+      //                                     blocked by anti-bot. Marking unavailable destroys
+      //                                     seeded prices. Preserve base so products stay visible.
       //   • Scraper skipped (no DB entry) → leave as-is (manually-curated entry)
       //   • Shopee (coming-soon stub)     → never mark unavailable (scraper disabled)
       const prices = product.prices.map((p) => {
@@ -574,7 +577,7 @@ export async function updateProductPrices(
                      reviews: lazadaFinal.reviews || p.reviews,
                      coupon: lazadaFinal.coupon ?? undefined };
           }
-          return { ...base, available: false, coupon: undefined };
+          return base; // preserve seeded price when scraper finds no match
         }
 
         // ── Banana IT ────────────────────────────────────────────────────
@@ -584,7 +587,7 @@ export async function updateProductPrices(
             return { ...base, price: bnnFinal.price, url: bnnFinal.url,
                      inStock: bnnFinal.inStock, available: true };
           }
-          if (hasBnnEntry) return { ...base, available: false }; // scraped, not found / rejected
+          if (hasBnnEntry) return base; // preserve seeded price when scraper finds no match
           return base; // skipped
         }
 
@@ -595,7 +598,7 @@ export async function updateProductPrices(
             return { ...base, price: powerBuyFinal.price, url: powerBuyFinal.url,
                      inStock: powerBuyFinal.inStock, available: true };
           }
-          if (hasPowerBuyEntry) return { ...base, available: false };
+          if (hasPowerBuyEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -606,7 +609,7 @@ export async function updateProductPrices(
             return { ...base, price: studio7Final.price, url: studio7Final.url,
                      inStock: studio7Final.inStock, available: true };
           }
-          if (hasStudio7Entry) return { ...base, available: false };
+          if (hasStudio7Entry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -617,7 +620,7 @@ export async function updateProductPrices(
             return { ...base, price: jibFinal.price, url: jibFinal.url,
                      inStock: jibFinal.inStock, available: true };
           }
-          if (hasJIBEntry) return { ...base, available: false };
+          if (hasJIBEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -628,7 +631,7 @@ export async function updateProductPrices(
             return { ...base, price: samsungFinal.price, url: samsungFinal.url,
                      inStock: samsungFinal.inStock, available: true };
           }
-          if (hasSamsungEntry) return { ...base, available: false };
+          if (hasSamsungEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -639,7 +642,7 @@ export async function updateProductPrices(
             return { ...base, price: sonyFinal.price, url: sonyFinal.url,
                      inStock: sonyFinal.inStock, available: true };
           }
-          if (hasSonyEntry) return { ...base, available: false };
+          if (hasSonyEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -650,7 +653,7 @@ export async function updateProductPrices(
             return { ...base, price: dysonFinal.price, url: dysonFinal.url,
                      inStock: dysonFinal.inStock, available: true };
           }
-          if (hasDysonEntry) return { ...base, available: false };
+          if (hasDysonEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -661,7 +664,7 @@ export async function updateProductPrices(
             return { ...base, price: centralFinal.price, url: centralFinal.url,
                      inStock: centralFinal.inStock, available: true };
           }
-          if (hasCentralEntry) return { ...base, available: false };
+          if (hasCentralEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -672,7 +675,7 @@ export async function updateProductPrices(
             return { ...base, price: nikeFinal.price, url: nikeFinal.url,
                      inStock: nikeFinal.inStock, available: true };
           }
-          if (hasNikeEntry) return { ...base, available: false };
+          if (hasNikeEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -683,7 +686,7 @@ export async function updateProductPrices(
             return { ...base, price: appleFinal.price, url: appleFinal.url,
                      inStock: appleFinal.inStock, available: true };
           }
-          if (hasAppleEntry) return { ...base, available: false };
+          if (hasAppleEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
@@ -695,7 +698,7 @@ export async function updateProductPrices(
                      inStock: watsonsFinal.inStock, available: true,
                      coupon: watsonsFinal.coupon ?? undefined };
           }
-          if (hasWatsonsEntry) return { ...base, available: false, coupon: undefined };
+          if (hasWatsonsEntry) return base; // preserve seeded price when scraper finds no match
           return base;
         }
 
