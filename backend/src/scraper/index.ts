@@ -748,7 +748,20 @@ export async function updateProductPrices(
         product.priceHistory = history.slice(-180) as any;
       }
 
-      await product.save();
+      // Use findByIdAndUpdate to avoid Mongoose VersionError (optimistic locking conflict
+      // that occurs when the seed runs concurrently or just before the scraper saves).
+      await Product.findByIdAndUpdate(
+        product._id,
+        {
+          $set: {
+            prices:       product.prices,
+            lastScraped:  product.lastScraped,
+            image:        product.image,
+            priceHistory: product.priceHistory,
+          },
+        },
+        { new: false }
+      );
 
       // ── Check & trigger price alerts ─────────────────────────────────
       // After saving, find any pending alerts for this product whose
