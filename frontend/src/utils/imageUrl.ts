@@ -24,11 +24,9 @@ const ALLOW_DIRECT = new Set([
   "127.0.0.1",
 ]);
 
-// Use the configured API base URL (Railway in production, localhost in dev)
-// Must use import.meta.env.VITE_* directly — Vite does static string replacement
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)
-  ? (import.meta.env.VITE_API_URL as string).replace(/\/$/, "")
-  : "http://localhost:5000";
+// VITE_API_URL already includes "/api" (e.g. "https://webprice-production.up.railway.app/api")
+// Same pattern as api/index.ts baseURL — use directly and append "/image-proxy"
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
 
 /** Returns the URL to use in an <img src={}> — proxied or direct. */
 export function proxyImage(url: string | undefined | null): string {
@@ -44,5 +42,5 @@ export function proxyImage(url: string | undefined | null): string {
     return url;
   }
 
-  return `${API_BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+  return `${API_URL}/image-proxy?url=${encodeURIComponent(url)}`;
 }
