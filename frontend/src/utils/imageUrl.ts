@@ -24,6 +24,11 @@ const ALLOW_DIRECT = new Set([
   "127.0.0.1",
 ]);
 
+// Use the configured API base URL (Railway in production, localhost in dev)
+const API_BASE =
+  (import.meta as any).env?.VITE_API_URL?.replace(/\/$/, "") ||
+  "http://localhost:5000";
+
 /** Returns the URL to use in an <img src={}> — proxied or direct. */
 export function proxyImage(url: string | undefined | null): string {
   if (!url || url.trim() === "") return "/placeholder-product.svg";
@@ -38,5 +43,5 @@ export function proxyImage(url: string | undefined | null): string {
     return url;
   }
 
-  return `http://localhost:5000/api/image-proxy?url=${encodeURIComponent(url)}`;
+  return `${API_BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
 }
