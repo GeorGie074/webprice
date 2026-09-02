@@ -25,9 +25,10 @@ const ALLOW_DIRECT = new Set([
 ]);
 
 // Use the configured API base URL (Railway in production, localhost in dev)
-const API_BASE =
-  (import.meta as any).env?.VITE_API_URL?.replace(/\/$/, "") ||
-  "http://localhost:5000";
+// Must use import.meta.env.VITE_* directly — Vite does static string replacement
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)
+  ? (import.meta.env.VITE_API_URL as string).replace(/\/$/, "")
+  : "http://localhost:5000";
 
 /** Returns the URL to use in an <img src={}> — proxied or direct. */
 export function proxyImage(url: string | undefined | null): string {
