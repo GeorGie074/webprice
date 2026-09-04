@@ -161,52 +161,7 @@ function extractFromDom(html: string, searchUrl: string): ScrapedItem[] {
   return results;
 }
 
-async function scrapeLazadaViaScraperAPI(
-  keyword: string,
-  apiKey: string
-): Promise<ScrapedItem[]> {
-  // Strategy: render=true + premium=true + wait=3000
-  //
-  // Why each flag matters for Lazada:
-  //  - render=true  → executes Lazada's React JS so products appear in DOM
-  //  - premium=true → uses residential proxy IPs (real home/mobile IPs).
-  //                   Lazada blocks datacenter IPs but cannot block residential ones.
-  //  - wait=3000    → waits 3 s after React renders for lazy-loaded product cards
-  //
-  // Cost: ~25 credits/request on ScraperAPI (vs 1 for plain fetch).
-  // With 5,000 free credits: ~200 Lazada Live Searches per month.
-  const lazadaUrl = `https://www.lazada.co.th/catalog/?q=${encodeURIComponent(keyword)}&sort=popularity`;
-  const scraperUrl =
-    `http://api.scraperapi.com/?api_key=${apiKey}` +
-    `&url=${encodeURIComponent(lazadaUrl)}` +
-    `&render=true&premium=true&wait=3000&country_code=th`;
-
-  console.log(`[Lazada] ScraperAPI render=true + premium (residential IP)...`);
-  const res = await fetch(scraperUrl, {
-    // Premium rendering can take up to 90 s
-    signal: AbortSignal.timeout(100_000),
-  });
-  if (!res.ok) throw new Error(`ScraperAPI HTTP ${res.status}`);
-  const html = await res.text();
-
-  // 1. Try embedded JSON — Lazada's SSR often serialises listItems into a <script>
-  const fromScript = extractFromScript(html);
-  if (fromScript && fromScript.length > 0) {
-    console.log(`[Lazada] Got ${fromScript.length} items from embedded JSON`);
-    return fromScript;
-  }
-
-  // 2. Fall back to Cheerio DOM parsing of rendered product cards
-  const fromDom = extractFromDom(html, lazadaUrl);
-  if (fromDom.length > 0) {
-    console.log(`[Lazada] Got ${fromDom.length} items from rendered DOM`);
-  } else {
-    console.log("[Lazada] render+premium returned no parseable products");
-  }
-  return fromDom;
-}
-
-// ─── Path B: Playwright (local dev) ───────────────────────────────────────────
+// ─── Path B: Playwright (local dev, headed Chrome only) ──────────────────────
 async function scrapeLazadaViaPlaywright(keyword: string): Promise<ScrapedItem[]> {
   const context = await createContext(false);
   const page = await context.newPage();
@@ -340,24 +295,33 @@ async function scrapeLazadaViaPlaywright(keyword: string): Promise<ScrapedItem[]
 }
 
 // ─── Entry point ───────────────────────────────────────────────────────────────
+//
+// Lazada uses Akamai Bot Manager with JavaScript fingerprinting.
+// Diagnosis (from Railway logs): ScraperAPI render+premium returns a 7KB
+// bot-detection page (empty title, zero DOM elements) — not real search results.
+// All cloud approaches fail:
+//   • Headless Playwright    → Akamai detects headless browser behavior
+//   • ScraperAPI standard    → Akamai detects datacenter IP
+//   • ScraperAPI render=true → Akamai detects headless fingerprint
+//   • ScraperAPI premium     → Akamai detects headless fingerprint (IP passes, JS fails)
+//
+// Only local headed Chrome (run-scraper.bat) works because a real Chrome
+// instance with a real ISP IP produces a genuine browser fingerprint.
+//
+// Cloud path: return [] immediately — do not waste ScraperAPI credits (25/req).
+// Local path:  use Playwright in headed mode (works fine).
+//
+// To add Lazada to Live Search in production, apply for the Lazada Affiliate
+// Program API which provides an official product search endpoint.
 export async function scrapeLazada(keyword: string): Promise<ScrapedItem[]> {
-  const apiKey = process.env.SCRAPERAPI_KEY;
+  // Detect cloud/Railway environment: Linux without an X display server
+  const isCloud = process.platform === "linux" && !process.env.DISPLAY;
 
-  if (apiKey) {
-    try {
-      const results = await scrapeLazadaViaScraperAPI(keyword, apiKey);
-      console.log(
-        `[Lazada] "${keyword}" → ${results.length} results (ScraperAPI)`
-      );
-      return results;
-    } catch (err) {
-      // Do NOT fall back to Playwright on Railway (headless mode).
-      // Headless Chrome + Lazada always fails — empty page, wasted browser resources.
-      // BNN and JIB still provide results; return empty and move on.
-      console.error(`[Lazada] ScraperAPI failed: ${(err as Error).message}`);
-      console.log("[Lazada] Skipping Playwright fallback (headless mode, Lazada blocks it)");
-      return [];
-    }
+  if (isCloud) {
+    // Akamai Bot Manager blocks all headless/cloud requests.
+    // Returning [] immediately — do not attempt ScraperAPI (wastes 25 credits).
+    console.log(`[Lazada] Skipped — Akamai Bot Manager blocks cloud scraping`);
+    return [];
   }
 
   // Local dev (no SCRAPERAPI_KEY): use Playwright in headed mode
