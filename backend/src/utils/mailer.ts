@@ -16,14 +16,14 @@ function getTransporter(): nodemailer.Transporter | null {
     return null; // Email not configured — silent skip
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _transporter = nodemailer.createTransport({
     host: SMTP_HOST,
     port: Number(SMTP_PORT ?? 587),
     secure: Number(SMTP_PORT ?? 587) === 465,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
-    from: SMTP_FROM ?? SMTP_USER,
-    family: 4, // Force IPv4 — Railway resolves smtp.gmail.com to IPv6 which it cannot reach
-  });
+    family: 4, // Force IPv4 — Railway resolves smtp.gmail.com to IPv6 (ENETUNREACH)
+  } as any);
 
   return _transporter;
 }
