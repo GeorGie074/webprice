@@ -123,7 +123,8 @@ async function scrapeLazadaViaScraperAPI(
 
   console.log(`[Lazada] Fetching AJAX endpoint via ScraperAPI...`);
   const res = await fetch(scraperUrl, {
-    signal: AbortSignal.timeout(45_000),
+    // ScraperAPI retries through multiple proxies — Lazada needs ~60s to succeed.
+    signal: AbortSignal.timeout(70_000),
   });
   if (!res.ok) throw new Error(`ScraperAPI HTTP ${res.status}`);
   const text = await res.text();
@@ -319,12 +320,16 @@ export async function scrapeLazada(keyword: string): Promise<ScrapedItem[]> {
       );
       return results;
     } catch (err) {
-      console.error(
-        `[Lazada] ScraperAPI failed: ${(err as Error).message} — falling back to Playwright`
-      );
+      // Do NOT fall back to Playwright on Railway (headless mode).
+      // Headless Chrome + Lazada always fails — empty page, wasted browser resources.
+      // BNN and JIB still provide results; return empty and move on.
+      console.error(`[Lazada] ScraperAPI failed: ${(err as Error).message}`);
+      console.log("[Lazada] Skipping Playwright fallback (headless mode, Lazada blocks it)");
+      return [];
     }
   }
 
+  // Local dev (no SCRAPERAPI_KEY): use Playwright in headed mode
   const results = await scrapeLazadaViaPlaywright(keyword);
   console.log(`[Lazada] "${keyword}" → ${results.length} results (Playwright)`);
   return results;
