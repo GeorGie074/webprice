@@ -1,35 +1,68 @@
 import { Browser, BrowserContext, chromium } from "playwright";
 
-let browser: Browser | null = null;
+// Two browser singletons:
+// - regularBrowser: no proxy, for platforms that work on Railway (Samsung, Apple, etc.)
+// - proxyBrowser:   ScraperAPI proxy set at LAUNCH level (Chrome --proxy-server flag),
+//                   for platforms blocked on Railway (Lazada, BNN, JIB).
+//
+// Proxy MUST be set at browser launch (not context) for Chromium networking to use it.
+let regularBrowser: Browser | null = null;
+let proxyBrowser:   Browser | null = null;
 
-/** Get (or create) a singleton Chromium instance */
+// Linux without $DISPLAY = Railway Docker container → headless required.
+// Local Windows/Mac = headed to bypass Lazada fingerprint detection.
+const needsHeadless = process.platform === "linux" && !process.env.DISPLAY;
+
+const BASE_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-blink-features=AutomationControlled",
+  "--disable-infobars",
+  "--no-first-run",
+  "--window-size=1366,768",
+  "--lang=th-TH",
+];
+if (!needsHeadless) BASE_ARGS.push("--window-position=-8000,-8000");
+
+/** Regular browser — no proxy */
 export async function getBrowser(): Promise<Browser> {
-  if (!browser || !browser.isConnected()) {
-    // Linux without $DISPLAY = Railway Docker container → must run headless.
-    // Local Windows/Mac with display = headed mode to bypass Lazada fingerprint detection.
-    const needsHeadless = process.platform === "linux" && !process.env.DISPLAY;
-
-    const args = [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-blink-features=AutomationControlled",
-      "--disable-infobars",
-      "--no-first-run",
-      "--window-size=1366,768",
-      "--lang=th-TH",
-    ];
-    // Only hide the window off-screen in headed mode (pointless in headless)
-    if (!needsHeadless) args.push("--window-position=-8000,-8000");
-
-    browser = await chromium.launch({
+  if (!regularBrowser || !regularBrowser.isConnected()) {
+    regularBrowser = await chromium.launch({
       headless: needsHeadless,
-      args,
+      args: BASE_ARGS,
       ignoreDefaultArgs: ["--enable-automation"],
     });
     console.log(`🌐 Browser launched (${needsHeadless ? "headless" : "headed"})`);
   }
-  return browser;
+  return regularBrowser;
+}
+
+/**
+ * Proxy browser — ScraperAPI proxy set at Chrome launch level.
+ * Falls back to regular browser if SCRAPERAPI_KEY is not set.
+ */
+export async function getProxyBrowser(): Promise<Browser> {
+  const key = process.env.SCRAPERAPI_KEY;
+  if (!key) {
+    console.log("⚠️  SCRAPERAPI_KEY not set — using regular browser (no proxy)");
+    return getBrowser();
+  }
+
+  if (!proxyBrowser || !proxyBrowser.isConnected()) {
+    proxyBrowser = await chromium.launch({
+      headless: needsHeadless,
+      proxy: {
+        server:   "http://proxy.scraperapi.com:8080",
+        username: "scraperapi",
+        password: key,
+      },
+      args: BASE_ARGS,
+      ignoreDefaultArgs: ["--enable-automation"],
+    });
+    console.log(`🌐 Proxy browser launched (${needsHeadless ? "headless" : "headed"} + ScraperAPI)`);
+  }
+  return proxyBrowser;
 }
 
 /** Stealth init script — patch navigator to hide automation signals */
@@ -62,39 +95,20 @@ const STEALTH_SCRIPT = `
 /**
  * Create a new browser context mimicking a real Thai Chrome user.
  *
- * @param useProxy  When true AND SCRAPERAPI_KEY env var is set, routes all
- *                  requests through ScraperAPI's residential proxy to bypass
- *                  anti-bot systems that block Railway datacenter IPs.
- *                  Has no effect when SCRAPERAPI_KEY is not set (local dev).
+ * @param useProxy  When true, uses the proxy browser (ScraperAPI set at launch level).
+ *                  When SCRAPERAPI_KEY is not set, falls back to regular browser.
  */
 export async function createContext(useProxy = false): Promise<BrowserContext> {
-  const b = await getBrowser();
-
-  // ScraperAPI residential proxy — only active when key is configured
-  const scraperApiKey = process.env.SCRAPERAPI_KEY;
-  const proxyConfig = useProxy && scraperApiKey
-    ? {
-        proxy: {
-          server:   "http://proxy.scraperapi.com:8080",
-          username: "scraperapi",
-          password: scraperApiKey,
-        },
-      }
-    : {};
-
-  if (useProxy && scraperApiKey) {
-    console.log("🔀 Using ScraperAPI proxy");
-  }
+  const b = useProxy ? await getProxyBrowser() : await getBrowser();
 
   const context = await b.newContext({
-    ...proxyConfig,
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     locale: "th-TH",
     timezoneId: "Asia/Bangkok",
     viewport: { width: 1366, height: 768 },
-    ignoreHTTPSErrors: useProxy && !!scraperApiKey, // needed for proxy SSL
+    ignoreHTTPSErrors: useProxy, // proxy SSL interception
     extraHTTPHeaders: {
       "accept-language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7",
       "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
@@ -108,9 +122,14 @@ export async function createContext(useProxy = false): Promise<BrowserContext> {
 }
 
 export async function closeBrowser(): Promise<void> {
-  if (browser) {
-    await browser.close();
-    browser = null;
+  if (regularBrowser) {
+    await regularBrowser.close();
+    regularBrowser = null;
     console.log("🔴 Browser closed");
+  }
+  if (proxyBrowser) {
+    await proxyBrowser.close();
+    proxyBrowser = null;
+    console.log("🔴 Proxy browser closed");
   }
 }
