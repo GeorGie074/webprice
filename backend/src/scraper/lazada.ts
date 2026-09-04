@@ -112,65 +112,43 @@ async function scrapeLazadaViaScraperAPI(
   keyword: string,
   apiKey: string
 ): Promise<ScrapedItem[]> {
-  // Strategy: call Lazada's internal AJAX search endpoint directly.
-  // This is the same JSON endpoint the Playwright interceptor captures when
-  // the search page loads — but we request it directly (no JS rendering needed,
-  // 1 credit instead of 5). Returns { mods: { listItems: [...] } }.
-  const ajaxUrl = `https://www.lazada.co.th/catalog/?q=${encodeURIComponent(keyword)}&ajax=true&sort=popularity`;
+  // Strategy: render=true + premium=true + wait=3000
+  //
+  // Why each flag matters for Lazada:
+  //  - render=true  → executes Lazada's React JS so products appear in DOM
+  //  - premium=true → uses residential proxy IPs (real home/mobile IPs).
+  //                   Lazada blocks datacenter IPs but cannot block residential ones.
+  //  - wait=3000    → waits 3 s after React renders for lazy-loaded product cards
+  //
+  // Cost: ~25 credits/request on ScraperAPI (vs 1 for plain fetch).
+  // With 5,000 free credits: ~200 Lazada Live Searches per month.
+  const lazadaUrl = `https://www.lazada.co.th/catalog/?q=${encodeURIComponent(keyword)}&sort=popularity`;
   const scraperUrl =
     `http://api.scraperapi.com/?api_key=${apiKey}` +
-    `&url=${encodeURIComponent(ajaxUrl)}&country_code=th`;
+    `&url=${encodeURIComponent(lazadaUrl)}` +
+    `&render=true&premium=true&wait=3000&country_code=th`;
 
-  console.log(`[Lazada] Fetching AJAX endpoint via ScraperAPI...`);
+  console.log(`[Lazada] ScraperAPI render=true + premium (residential IP)...`);
   const res = await fetch(scraperUrl, {
-    // ScraperAPI retries through multiple proxies — Lazada needs ~60s to succeed.
-    signal: AbortSignal.timeout(70_000),
+    // Premium rendering can take up to 90 s
+    signal: AbortSignal.timeout(100_000),
   });
   if (!res.ok) throw new Error(`ScraperAPI HTTP ${res.status}`);
-  const text = await res.text();
+  const html = await res.text();
 
-  // 1. Try to parse as JSON (ideal path — AJAX endpoint returns JSON)
-  try {
-    const data = JSON.parse(text);
-    const items: any[] = data?.mods?.listItems ?? data?.rgn?.listItems ?? [];
-    if (items.length > 0) {
-      console.log(`[Lazada] ScraperAPI AJAX: ${items.length} items`);
-      const results: ScrapedItem[] = [];
-      for (const item of items.slice(0, 12)) {
-        const rawPrice = item.price ?? item.priceShow ?? "";
-        const price = Math.round(parseFloat(String(rawPrice).replace(/[^0-9.]/g, "")));
-        if (!price) continue;
-        const imgRaw = item.image ?? item.img ?? item.thumbnail ?? "";
-        const image = imgRaw
-          ? imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw
-          : undefined;
-        results.push({
-          name: item.name ?? "",
-          price,
-          url: item.itemUrl ? `https:${item.itemUrl}` : "",
-          inStock: true,
-          rating: parseFloat(item.ratingScore ?? "0"),
-          reviews: parseInt(item.review ?? "0"),
-          image,
-        });
-      }
-      if (results.length > 0) return results;
-    }
-  } catch { /* not JSON — fall through to HTML parsing */ }
-
-  // 2. ScraperAPI returned HTML (redirected to non-AJAX page) — try to parse
-  console.log("[Lazada] AJAX endpoint returned HTML — trying embedded JSON...");
-  const fromScript = extractFromScript(text);
+  // 1. Try embedded JSON — Lazada's SSR often serialises listItems into a <script>
+  const fromScript = extractFromScript(html);
   if (fromScript && fromScript.length > 0) {
-    console.log(`[Lazada] Extracted ${fromScript.length} items from embedded JSON`);
+    console.log(`[Lazada] Got ${fromScript.length} items from embedded JSON`);
     return fromScript;
   }
 
-  const fromDom = extractFromDom(text, ajaxUrl);
+  // 2. Fall back to Cheerio DOM parsing of rendered product cards
+  const fromDom = extractFromDom(html, lazadaUrl);
   if (fromDom.length > 0) {
-    console.log(`[Lazada] Extracted ${fromDom.length} items from DOM`);
+    console.log(`[Lazada] Got ${fromDom.length} items from rendered DOM`);
   } else {
-    console.log("[Lazada] ScraperAPI returned no parseable products for Lazada");
+    console.log("[Lazada] render+premium returned no parseable products");
   }
   return fromDom;
 }
