@@ -112,31 +112,64 @@ async function scrapeLazadaViaScraperAPI(
   keyword: string,
   apiKey: string
 ): Promise<ScrapedItem[]> {
-  const lazadaUrl = `https://www.lazada.co.th/catalog/?q=${encodeURIComponent(keyword)}&sort=popularity`;
+  // Strategy: call Lazada's internal AJAX search endpoint directly.
+  // This is the same JSON endpoint the Playwright interceptor captures when
+  // the search page loads — but we request it directly (no JS rendering needed,
+  // 1 credit instead of 5). Returns { mods: { listItems: [...] } }.
+  const ajaxUrl = `https://www.lazada.co.th/catalog/?q=${encodeURIComponent(keyword)}&ajax=true&sort=popularity`;
   const scraperUrl =
     `http://api.scraperapi.com/?api_key=${apiKey}` +
-    `&url=${encodeURIComponent(lazadaUrl)}&render=true&country_code=th`;
+    `&url=${encodeURIComponent(ajaxUrl)}&country_code=th`;
 
-  console.log(`[Lazada] Fetching via ScraperAPI render=true...`);
+  console.log(`[Lazada] Fetching AJAX endpoint via ScraperAPI...`);
   const res = await fetch(scraperUrl, {
-    signal: AbortSignal.timeout(65_000), // render=true can take up to 60s
+    signal: AbortSignal.timeout(45_000),
   });
   if (!res.ok) throw new Error(`ScraperAPI HTTP ${res.status}`);
-  const html = await res.text();
+  const text = await res.text();
 
-  // 1. Try embedded JSON (fastest, most accurate)
-  const fromScript = extractFromScript(html);
+  // 1. Try to parse as JSON (ideal path — AJAX endpoint returns JSON)
+  try {
+    const data = JSON.parse(text);
+    const items: any[] = data?.mods?.listItems ?? data?.rgn?.listItems ?? [];
+    if (items.length > 0) {
+      console.log(`[Lazada] ScraperAPI AJAX: ${items.length} items`);
+      const results: ScrapedItem[] = [];
+      for (const item of items.slice(0, 12)) {
+        const rawPrice = item.price ?? item.priceShow ?? "";
+        const price = Math.round(parseFloat(String(rawPrice).replace(/[^0-9.]/g, "")));
+        if (!price) continue;
+        const imgRaw = item.image ?? item.img ?? item.thumbnail ?? "";
+        const image = imgRaw
+          ? imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw
+          : undefined;
+        results.push({
+          name: item.name ?? "",
+          price,
+          url: item.itemUrl ? `https:${item.itemUrl}` : "",
+          inStock: true,
+          rating: parseFloat(item.ratingScore ?? "0"),
+          reviews: parseInt(item.review ?? "0"),
+          image,
+        });
+      }
+      if (results.length > 0) return results;
+    }
+  } catch { /* not JSON — fall through to HTML parsing */ }
+
+  // 2. ScraperAPI returned HTML (redirected to non-AJAX page) — try to parse
+  console.log("[Lazada] AJAX endpoint returned HTML — trying embedded JSON...");
+  const fromScript = extractFromScript(text);
   if (fromScript && fromScript.length > 0) {
     console.log(`[Lazada] Extracted ${fromScript.length} items from embedded JSON`);
     return fromScript;
   }
 
-  // 2. Fall back to DOM parsing
-  const fromDom = extractFromDom(html, lazadaUrl);
+  const fromDom = extractFromDom(text, ajaxUrl);
   if (fromDom.length > 0) {
     console.log(`[Lazada] Extracted ${fromDom.length} items from DOM`);
   } else {
-    console.log("[Lazada] ScraperAPI returned no parseable products");
+    console.log("[Lazada] ScraperAPI returned no parseable products for Lazada");
   }
   return fromDom;
 }
