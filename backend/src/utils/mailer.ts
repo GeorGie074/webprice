@@ -22,6 +22,7 @@ function getTransporter(): nodemailer.Transporter | null {
     secure: Number(SMTP_PORT ?? 587) === 465,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
     from: SMTP_FROM ?? SMTP_USER,
+    family: 4, // Force IPv4 — Railway resolves smtp.gmail.com to IPv6 which it cannot reach
   });
 
   return _transporter;
