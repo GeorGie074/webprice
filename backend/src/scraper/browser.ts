@@ -5,23 +5,29 @@ let browser: Browser | null = null;
 /** Get (or create) a singleton Chromium instance */
 export async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.isConnected()) {
+    // Linux without $DISPLAY = Railway Docker container → must run headless.
+    // Local Windows/Mac with display = headed mode to bypass Lazada fingerprint detection.
+    const needsHeadless = process.platform === "linux" && !process.env.DISPLAY;
+
+    const args = [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-infobars",
+      "--no-first-run",
+      "--window-size=1366,768",
+      "--lang=th-TH",
+    ];
+    // Only hide the window off-screen in headed mode (pointless in headless)
+    if (!needsHeadless) args.push("--window-position=-8000,-8000");
+
     browser = await chromium.launch({
-      // headless:false + off-screen window bypasses Lazada's headless detection
-      headless: false,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-infobars",
-        "--no-first-run",
-        "--window-size=1366,768",
-        "--window-position=-8000,-8000", // hide window off-screen
-        "--lang=th-TH",
-      ],
+      headless: needsHeadless,
+      args,
       ignoreDefaultArgs: ["--enable-automation"],
     });
-    console.log("🌐 Browser launched");
+    console.log(`🌐 Browser launched (${needsHeadless ? "headless" : "headed"})`);
   }
   return browser;
 }
