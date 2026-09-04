@@ -748,6 +748,20 @@ export async function updateProductPrices(
         product.priceHistory = history.slice(-180) as any;
       }
 
+      // ── Recalculate minPrice / maxPrice ───────────────────────────────
+      // findByIdAndUpdate() bypasses the Mongoose pre("save") hook that
+      // normally auto-computes these fields from the prices array.
+      // We replicate the same logic here so minPrice/maxPrice stay in sync.
+      const COMING_SOON_PLAT = ["Shopee"];
+      const pricesForCalc = (prices as IPlatformPrice[]).filter(
+        (p) => p.available !== false && !COMING_SOON_PLAT.includes(p.platform)
+      );
+      const calcSource = pricesForCalc.length > 0 ? pricesForCalc : prices as IPlatformPrice[];
+      const newMinPrice = calcSource.length > 0
+        ? Math.min(...calcSource.map((p) => p.price)) : 0;
+      const newMaxPrice = calcSource.length > 0
+        ? Math.max(...calcSource.map((p) => p.price)) : 0;
+
       // Use findByIdAndUpdate to avoid Mongoose VersionError (optimistic locking conflict
       // that occurs when the seed runs concurrently or just before the scraper saves).
       await Product.findByIdAndUpdate(
@@ -758,6 +772,8 @@ export async function updateProductPrices(
             lastScraped:  product.lastScraped,
             image:        product.image,
             priceHistory: product.priceHistory,
+            minPrice:     newMinPrice,
+            maxPrice:     newMaxPrice,
           },
         },
         { new: false }
@@ -766,7 +782,6 @@ export async function updateProductPrices(
       // ── Check & trigger price alerts ─────────────────────────────────
       // After saving, find any pending alerts for this product whose
       // targetPrice >= current minPrice and trigger + email them.
-      const newMinPrice = product.minPrice;
       if (newMinPrice > 0) {
         const pendingAlerts = await Alert.find({
           product: product._id,
