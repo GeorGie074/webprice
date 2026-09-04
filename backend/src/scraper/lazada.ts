@@ -21,84 +21,137 @@ import type { ScrapedItem } from "./shopee.js";
 
 // ─── Path A: ScraperAPI render=true + Cheerio ─────────────────────────────────
 
-/** Try to extract product list from Lazada's embedded JSON script tags. */
+/**
+ * Parse products from any JSON blob embedded in <script> tags.
+ * Tries multiple patterns Lazada has used over time.
+ */
 function extractFromScript(html: string): ScrapedItem[] | null {
-  // Lazada embeds search result data in a script tag — look for listItems array
-  // Pattern: "listItems":[{...},{...}] inside any <script>
-  const scriptMatch = html.match(/"listItems"\s*:\s*(\[[\s\S]*?\])\s*[,}]/);
-  if (!scriptMatch) return null;
+  // Pattern 1: "listItems":[...]  (AJAX / SSR response embedded in page)
+  // Pattern 2: mods.listItems inside __INITIAL_STATE__ or similar global
+  const patterns = [
+    /"listItems"\s*:\s*(\[[\s\S]*?\])\s*[,}]/,
+    /listItems['"]\s*:\s*(\[[\s\S]*?\])\s*[,}]/,
+  ];
 
-  try {
-    const items: any[] = JSON.parse(scriptMatch[1]);
-    if (!Array.isArray(items) || items.length === 0) return null;
-
-    const results: ScrapedItem[] = [];
-    for (const item of items.slice(0, 12)) {
-      const rawPrice = item.price ?? item.priceShow ?? "";
-      const price = Math.round(parseFloat(String(rawPrice).replace(/[^0-9.]/g, "")));
-      if (!price) continue;
-
-      const imgRaw = item.image ?? item.img ?? item.thumbnail ?? "";
-      const image = imgRaw
-        ? imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw
-        : undefined;
-
-      results.push({
-        name: item.name ?? "",
-        price,
-        url: item.itemUrl ? `https:${item.itemUrl}` : "",
-        inStock: true,
-        rating: parseFloat(item.ratingScore ?? "0"),
-        reviews: parseInt(item.review ?? "0"),
-        image,
-      });
-    }
-    return results.length > 0 ? results : null;
-  } catch {
-    return null;
+  for (const rx of patterns) {
+    const m = html.match(rx);
+    if (!m) continue;
+    try {
+      const items: any[] = JSON.parse(m[1]);
+      if (!Array.isArray(items) || items.length === 0) continue;
+      const results: ScrapedItem[] = [];
+      for (const item of items.slice(0, 12)) {
+        const rawPrice = item.price ?? item.priceShow ?? "";
+        const price = Math.round(parseFloat(String(rawPrice).replace(/[^0-9.]/g, "")));
+        if (!price) continue;
+        const imgRaw = item.image ?? item.img ?? item.thumbnail ?? "";
+        const image = imgRaw
+          ? imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw
+          : undefined;
+        results.push({
+          name: item.name ?? "",
+          price,
+          url: item.itemUrl ? `https:${item.itemUrl}` : "",
+          inStock: true,
+          rating: parseFloat(item.ratingScore ?? "0"),
+          reviews: parseInt(item.review ?? "0"),
+          image,
+        });
+      }
+      if (results.length > 0) return results;
+    } catch { continue; }
   }
+  return null;
 }
 
-/** Parse product cards from Lazada's rendered DOM using Cheerio. */
+/**
+ * Parse product cards from the rendered DOM.
+ * Uses multiple selector strategies + a price-anchor fallback for
+ * when Lazada rotates their minified CSS class names.
+ */
 function extractFromDom(html: string, searchUrl: string): ScrapedItem[] {
   const $ = load(html);
   const results: ScrapedItem[] = [];
 
-  // Lazada DOM selectors — try each in priority order
+  // ── Diagnostic: log title + selector hit counts (visible in Railway logs) ──
+  const pageTitle = $("title").text().trim();
+  const diagSelectors: Record<string, number> = {
+    '[data-tracking="product-card"]': $('[data-tracking="product-card"]').length,
+    "[data-item-id]": $("[data-item-id]").length,
+    "[data-spm]": $("[data-spm]").length,
+    "a[href*='/products/']": $("a[href*='/products/']").length,
+    "[class*=product]": $("[class*=product]").length,
+  };
+  console.log(`[Lazada] Page title: "${pageTitle.slice(0, 80)}"`);
+  console.log(`[Lazada] HTML length: ${html.length}`);
+  console.log(`[Lazada] Selectors:`, JSON.stringify(diagSelectors));
+
+  // Strategy 1: known structural selectors
   const selectors = [
     '[data-tracking="product-card"]',
-    ".Bm3ON",
+    "[data-item-id]",
+    "[class*=Bm3ON]",
     '[class*="product-card"]',
-    "div[data-item-id]",
+    '[class*="product-item"]',
   ];
-
   let cards: any[] = [];
   for (const sel of selectors) {
     const found = $(sel).toArray();
     if (found.length > 0) { cards = found; break; }
   }
 
+  // Strategy 2: price-anchor fallback — find <a> links that point to Lazada
+  // product pages and contain a ฿ price somewhere nearby.
+  if (cards.length === 0) {
+    console.log("[Lazada] No structural cards — trying price-anchor fallback");
+    const productLinks = $("a[href]").toArray().filter((a) => {
+      const href = $(a).attr("href") ?? "";
+      return (
+        href.includes("/products/") ||
+        href.includes("lazada.co.th/") ||
+        href.includes("i.lazada.co.th")
+      );
+    });
+    for (const a of productLinks.slice(0, 20)) {
+      const el  = $(a);
+      const txt = el.text().trim();
+      const priceMatch = txt.match(/฿\s*([\d,]+)/);
+      if (!priceMatch) continue;
+      const price = Math.round(parseFloat(priceMatch[1].replace(/,/g, "")));
+      if (!price || price < 100) continue;
+      const name = txt.replace(/฿[\d,]+.*/, "").trim().split("\n")[0].trim();
+      if (!name || name.length < 3) continue;
+      const href = $(a).attr("href") ?? "";
+      results.push({
+        name,
+        price,
+        url: href.startsWith("http") ? href : `https:${href}`,
+        inStock: true,
+        rating: 0,
+        reviews: 0,
+      });
+      if (results.length >= 12) break;
+    }
+    return results;
+  }
+
+  // Parse structural cards normally
   for (const card of cards.slice(0, 12)) {
-    const el = $(card);
+    const el   = $(card);
     const text = el.text();
     const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
     const priceLine = lines.find((l) => l.startsWith("฿")) ?? "";
     const price = Math.round(parseFloat(priceLine.replace(/[^0-9.]/g, "")));
     if (!price) continue;
-
-    const link = el.find("a").first().attr("href") ?? "";
+    const link  = el.find("a").first().attr("href") ?? "";
     const imgEl = el.find("img").first();
-    const img = imgEl.attr("src") || imgEl.attr("data-src") || "";
-
-    const name = lines[0] ?? "";
+    const img   = imgEl.attr("src") || imgEl.attr("data-src") || "";
+    const name  = lines[0] ?? "";
     if (!name) continue;
-
     results.push({
       name,
       price,
-      url: link
-        ? link.startsWith("http") ? link : `https:${link}`
-        : searchUrl,
+      url: link ? (link.startsWith("http") ? link : `https:${link}`) : searchUrl,
       inStock: true,
       rating: 0,
       reviews: 0,
