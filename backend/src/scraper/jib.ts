@@ -1,92 +1,181 @@
+import { load } from "cheerio";
 import { createContext } from "./browser.js";
 import type { ScrapedItem } from "./shopee.js";
 
 /**
  * Scrape JIB Computer (jib.co.th) — major Thai IT retailer.
  *
- * Strategy:
- *  1. Navigate to search URL: /web/product/product_search/0?str_search={keyword}&cate_id[]=
- *  2. Parse PHP-rendered product cards (server-side HTML, no API interception needed).
- *  3. Product card selector: .col-md-3.col-sm-4.col-xs-6
- *     - Name:  .reladiv a (first anchor link text)
- *     - Price: .boxprice .col-sm-6.text-right — lines: "24,000.- -2%" / "23,590.-" / "ลดทันที 410.-"
- *              → skip "ลดทันที" line, take smallest remaining number (= current price)
- *     - URL:   .reladiv a (first anchor link href)
+ * Two code paths:
+ *  A) ScraperAPI API mode (when SCRAPERAPI_KEY is set — used on Railway):
+ *     GET http://api.scraperapi.com/?api_key=KEY&url=ENCODED_JIB_URL
+ *     → Returns server-rendered HTML → parse with Cheerio.
+ *     Port 80 — always reachable from Railway.
  *
- * Carries: laptops, desktops, phones, tablets, headphones, peripherals
+ *  B) Playwright mode (local dev, no SCRAPERAPI_KEY):
+ *     Launch headed Chrome, navigate, evaluate DOM.
+ *
+ * Product card selector: .col-md-3.col-sm-4.col-xs-6
+ *   Name:  .reladiv a (first anchor whose text is the product name)
+ *   Price: .boxprice .text-right — take smallest number, excluding "ลดทันที" lines
+ *   URL:   .reladiv a href
  */
-export async function scrapeJIB(keyword: string): Promise<ScrapedItem[]> {
-  // useProxy=true → routes through ScraperAPI on Railway when SCRAPERAPI_KEY is set
-  const context = await createContext(true);
-  const page    = await context.newPage();
+
+// ─── Path A: ScraperAPI fetch + Cheerio ───────────────────────────────────────
+async function scrapeJIBViaScraperAPI(
+  keyword: string,
+  apiKey: string
+): Promise<ScrapedItem[]> {
+  const jibUrl = `https://www.jib.co.th/web/product/product_search/0?str_search=${encodeURIComponent(keyword)}&cate_id[]=`;
+  const scraperUrl =
+    `http://api.scraperapi.com/?api_key=${apiKey}` +
+    `&url=${encodeURIComponent(jibUrl)}&country_code=th`;
+
+  console.log(`[JIB] Fetching via ScraperAPI...`);
+  const res = await fetch(scraperUrl, {
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) throw new Error(`ScraperAPI HTTP ${res.status}`);
+  const html = await res.text();
+
+  const $ = load(html);
   const results: ScrapedItem[] = [];
+  const SKIP = ["ซื้อเลย", "เพิ่มลงตะกร้า", "เปรียบเทียบ"];
+
+  $(".col-md-3.col-sm-4.col-xs-6")
+    .slice(0, 15)
+    .each((_, card) => {
+      // ── Name + URL ──────────────────────────────────────────────────────────
+      const productLink = $(card)
+        .find(".reladiv a")
+        .toArray()
+        .find((a) => {
+          const t = $(a).text().trim();
+          return t.length > 5 && !SKIP.includes(t);
+        });
+
+      const name = productLink
+        ? $(productLink).text().trim().replace(/\s+/g, " ")
+        : "";
+      const rawHref = productLink ? $(productLink).attr("href") ?? "" : "";
+      const url = rawHref
+        ? rawHref.startsWith("http")
+          ? rawHref
+          : `https://www.jib.co.th${rawHref.startsWith("/") ? "" : "/"}${rawHref}`
+        : "";
+
+      // ── Image ───────────────────────────────────────────────────────────────
+      const imgEl = $(card).find("img").first();
+      const imgSrc = imgEl.attr("src") || imgEl.attr("data-src") || "";
+      const image = imgSrc.startsWith("http") ? imgSrc : undefined;
+
+      // ── Price ───────────────────────────────────────────────────────────────
+      const priceBox = $(card)
+        .find(".boxprice .text-right, .col-sm-6.text-right")
+        .first();
+      const priceText = priceBox.text();
+      const priceLines = priceText
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !l.includes("ลดทันที"));
+      const nums = (priceLines.join(" ").match(/[\d,]+(?:\.\d+)?/g) ?? [])
+        .map((n) => parseFloat(n.replace(/,/g, "")))
+        .filter((n) => n >= 100 && n <= 10_000_000);
+      const price = nums.length > 0 ? Math.round(Math.min(...nums)) : 0;
+
+      // ── In-stock ────────────────────────────────────────────────────────────
+      const inStock = !$(card).text().includes("สินค้าหมด");
+
+      if (name && price > 0) {
+        results.push({
+          name,
+          price,
+          url: url || jibUrl,
+          inStock,
+          rating: 0,
+          reviews: 0,
+          image,
+        });
+      }
+    });
+
+  return results;
+}
+
+// ─── Path B: Playwright (local dev) ───────────────────────────────────────────
+async function scrapeJIBViaPlaywright(keyword: string): Promise<ScrapedItem[]> {
+  const context = await createContext(false);
+  const page = await context.newPage();
+  const results: ScrapedItem[] = [];
+  const searchUrl = `https://www.jib.co.th/web/product/product_search/0?str_search=${encodeURIComponent(keyword)}&cate_id[]=`;
 
   try {
-    const searchUrl = `https://www.jib.co.th/web/product/product_search/0?str_search=${encodeURIComponent(keyword)}&cate_id[]=`;
-
-    console.log(`[JIB] Searching "${keyword}"...`);
-    await page.goto(searchUrl, { waitUntil: "networkidle", timeout: 35_000 })
-      .catch(() => page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 35_000 }));
+    console.log(`[JIB] Searching "${keyword}" via Playwright...`);
+    await page
+      .goto(searchUrl, { waitUntil: "networkidle", timeout: 35_000 })
+      .catch(() =>
+        page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 35_000 })
+      );
     await page.waitForTimeout(1_500);
 
-    const items = await page.evaluate(() => {
-      // Each product card: .col-md-3.col-sm-4.col-xs-6
-      const cards = Array.from(
-        document.querySelectorAll(".col-md-3.col-sm-4.col-xs-6")
+    const items = await page
+      .evaluate(() => {
+        const cards = Array.from(
+          document.querySelectorAll(".col-md-3.col-sm-4.col-xs-6")
+        );
+        return cards.slice(0, 15).map((card) => {
+          const reladiv = card.querySelector(".reladiv");
+          const links = Array.from(reladiv?.querySelectorAll("a") ?? []);
+          const productLink = links.find((a) => {
+            const t = a.textContent?.trim() ?? "";
+            return (
+              t.length > 5 &&
+              !["ซื้อเลย", "เพิ่มลงตะกร้า", "เปรียบเทียบ"].includes(t)
+            );
+          }) as HTMLAnchorElement | undefined;
+          const name =
+            productLink?.textContent?.trim().replace(/\s+/g, " ") ?? "";
+          const url = productLink?.href ?? "";
+          const imgEl = card.querySelector("img") as HTMLImageElement | null;
+          const image =
+            imgEl?.src || imgEl?.getAttribute("data-src") || "";
+          const priceBox = card.querySelector(
+            ".boxprice .text-right,.col-sm-6.text-right"
+          );
+          const priceText = priceBox?.textContent ?? "";
+          const priceLines = priceText
+            .split("\n")
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0 && !l.includes("ลดทันที"));
+          const nums = (priceLines.join(" ").match(/[\d,]+(?:\.\d+)?/g) ?? [])
+            .map((n) => parseFloat(n.replace(/,/g, "")))
+            .filter((n) => n >= 100 && n <= 10_000_000);
+          const price =
+            nums.length > 0 ? Math.round(Math.min(...nums)) : 0;
+          const outOfStock = card.textContent?.includes("สินค้าหมด") ?? false;
+          return { name, price, url, inStock: !outOfStock, image };
+        });
+      })
+      .catch(
+        () =>
+          [] as {
+            name: string;
+            price: number;
+            url: string;
+            inStock: boolean;
+            image: string;
+          }[]
       );
-
-      return cards.slice(0, 15).map((card) => {
-        // ── Name + URL ─────────────────────────────────────────────────
-        const reladiv = card.querySelector(".reladiv");
-        // First anchor that isn't "ซื้อเลย" / "เพิ่มลงตะกร้า"
-        const links = Array.from(reladiv?.querySelectorAll("a") ?? []);
-        const productLink = links.find((a) => {
-          const t = a.textContent?.trim() ?? "";
-          return t.length > 5 && !["ซื้อเลย","เพิ่มลงตะกร้า","เปรียบเทียบ"].includes(t);
-        }) as HTMLAnchorElement | undefined;
-
-        const name = productLink?.textContent?.trim().replace(/\s+/g, " ") ?? "";
-        const url  = productLink?.href ?? "";
-
-        // ── Image ───────────────────────────────────────────────────────
-        // JIB cards have a product image above the reladiv text block
-        const imgEl = card.querySelector("img") as HTMLImageElement | null;
-        const image = imgEl?.src || imgEl?.getAttribute("data-src") || "";
-
-        // ── Price ───────────────────────────────────────────────────────
-        // Format: "24,000.-  -2%\n23,590.-\nลดทันที   410.-"
-        //   Line 1: original price + discount %  (e.g. "24,000.-  -2%")
-        //   Line 2: current selling price         (e.g. "23,590.-")  ← we want this
-        //   Line 3: discount amount               (e.g. "ลดทันที 410.-") ← skip
-        // Strategy: exclude "ลดทันที" lines, then take the smallest remaining number
-        const priceBox = card.querySelector(".boxprice .text-right,.col-sm-6.text-right");
-        const priceText = priceBox?.textContent ?? "";
-        const priceLines = priceText
-          .split("\n")
-          .map((l) => l.trim())
-          .filter((l) => l.length > 0 && !l.includes("ลดทันที"));
-        const nums = (priceLines.join(" ").match(/[\d,]+(?:\.\d+)?/g) ?? [])
-          .map((n) => parseFloat(n.replace(/,/g, "")))
-          .filter((n) => n >= 100 && n <= 10_000_000); // sanity: 100–10M baht
-        // Current price = smallest number after excluding discount-amount lines
-        const price = nums.length > 0 ? Math.round(Math.min(...nums)) : 0;
-
-        // ── In-stock ────────────────────────────────────────────────────
-        const outOfStock = card.textContent?.includes("สินค้าหมด") ?? false;
-
-        return { name, price, url, inStock: !outOfStock, image };
-      });
-    }).catch(() => [] as { name: string; price: number; url: string; inStock: boolean; image: string }[]);
 
     for (const item of items) {
       if (item.name && item.price > 0) {
-        const image = item.image && item.image.startsWith("http") ? item.image : undefined;
+        const image =
+          item.image && item.image.startsWith("http") ? item.image : undefined;
         results.push({
-          name:    item.name,
-          price:   item.price,
-          url:     item.url || searchUrl,
+          name: item.name,
+          price: item.price,
+          url: item.url || searchUrl,
           inStock: item.inStock,
-          rating:  0,
+          rating: 0,
           reviews: 0,
           image,
         });
@@ -97,14 +186,34 @@ export async function scrapeJIB(keyword: string): Promise<ScrapedItem[]> {
       const title = await page.title().catch(() => "?");
       console.log(`[JIB] No results — page: "${title.slice(0, 60)}"`);
     }
-
   } catch (err) {
-    console.error(`[JIB] Error "${keyword}":`, (err as Error).message);
+    console.error(`[JIB] Playwright error "${keyword}":`, (err as Error).message);
   } finally {
     await context.close().catch(() => {});
-    console.log("[JIB] Context closed");
   }
 
-  console.log(`[JIB] "${keyword}" → ${results.length} results`);
+  return results;
+}
+
+// ─── Entry point ───────────────────────────────────────────────────────────────
+export async function scrapeJIB(keyword: string): Promise<ScrapedItem[]> {
+  const apiKey = process.env.SCRAPERAPI_KEY;
+
+  if (apiKey) {
+    try {
+      const results = await scrapeJIBViaScraperAPI(keyword, apiKey);
+      console.log(
+        `[JIB] "${keyword}" → ${results.length} results (ScraperAPI)`
+      );
+      return results;
+    } catch (err) {
+      console.error(
+        `[JIB] ScraperAPI failed: ${(err as Error).message} — falling back to Playwright`
+      );
+    }
+  }
+
+  const results = await scrapeJIBViaPlaywright(keyword);
+  console.log(`[JIB] "${keyword}" → ${results.length} results (Playwright)`);
   return results;
 }

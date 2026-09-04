@@ -1,16 +1,13 @@
 import { Browser, BrowserContext, chromium } from "playwright";
 
-// Two browser singletons:
-// - regularBrowser: no proxy, for platforms that work on Railway (Samsung, Apple, etc.)
-// - proxyBrowser:   ScraperAPI proxy set at LAUNCH level (Chrome --proxy-server flag),
-//                   for platforms blocked on Railway (Lazada, BNN, JIB).
+// Single browser singleton for local Playwright usage.
+// On Railway (SCRAPERAPI_KEY set), scrapers use ScraperAPI API mode
+// (HTTP fetch on port 80) and do NOT need a browser at all.
 //
-// Proxy MUST be set at browser launch (not context) for Chromium networking to use it.
-let regularBrowser: Browser | null = null;
-let proxyBrowser:   Browser | null = null;
-
 // Linux without $DISPLAY = Railway Docker container → headless required.
-// Local Windows/Mac = headed to bypass Lazada fingerprint detection.
+// Local Windows/Mac = headed to bypass anti-bot fingerprint checks.
+let browser: Browser | null = null;
+
 const needsHeadless = process.platform === "linux" && !process.env.DISPLAY;
 
 const BASE_ARGS = [
@@ -25,44 +22,17 @@ const BASE_ARGS = [
 ];
 if (!needsHeadless) BASE_ARGS.push("--window-position=-8000,-8000");
 
-/** Regular browser — no proxy */
+/** Get (or launch) the shared browser singleton. */
 export async function getBrowser(): Promise<Browser> {
-  if (!regularBrowser || !regularBrowser.isConnected()) {
-    regularBrowser = await chromium.launch({
+  if (!browser || !browser.isConnected()) {
+    browser = await chromium.launch({
       headless: needsHeadless,
       args: BASE_ARGS,
       ignoreDefaultArgs: ["--enable-automation"],
     });
     console.log(`🌐 Browser launched (${needsHeadless ? "headless" : "headed"})`);
   }
-  return regularBrowser;
-}
-
-/**
- * Proxy browser — ScraperAPI proxy set at Chrome launch level.
- * Falls back to regular browser if SCRAPERAPI_KEY is not set.
- */
-export async function getProxyBrowser(): Promise<Browser> {
-  const key = process.env.SCRAPERAPI_KEY;
-  if (!key) {
-    console.log("⚠️  SCRAPERAPI_KEY not set — using regular browser (no proxy)");
-    return getBrowser();
-  }
-
-  if (!proxyBrowser || !proxyBrowser.isConnected()) {
-    proxyBrowser = await chromium.launch({
-      headless: needsHeadless,
-      proxy: {
-        server:   "http://proxy.scraperapi.com:8080",
-        username: "scraperapi",
-        password: key,
-      },
-      args: BASE_ARGS,
-      ignoreDefaultArgs: ["--enable-automation"],
-    });
-    console.log(`🌐 Proxy browser launched (${needsHeadless ? "headless" : "headed"} + ScraperAPI)`);
-  }
-  return proxyBrowser;
+  return browser;
 }
 
 /** Stealth init script — patch navigator to hide automation signals */
@@ -94,12 +64,11 @@ const STEALTH_SCRIPT = `
 
 /**
  * Create a new browser context mimicking a real Thai Chrome user.
- *
- * @param useProxy  When true, uses the proxy browser (ScraperAPI set at launch level).
- *                  When SCRAPERAPI_KEY is not set, falls back to regular browser.
+ * The useProxy parameter is kept for API compatibility but ignored —
+ * scrapers that need proxy now use ScraperAPI API mode directly (no browser proxy).
  */
 export async function createContext(useProxy = false): Promise<BrowserContext> {
-  const b = useProxy ? await getProxyBrowser() : await getBrowser();
+  const b = await getBrowser();
 
   const context = await b.newContext({
     userAgent:
@@ -108,7 +77,7 @@ export async function createContext(useProxy = false): Promise<BrowserContext> {
     locale: "th-TH",
     timezoneId: "Asia/Bangkok",
     viewport: { width: 1366, height: 768 },
-    ignoreHTTPSErrors: useProxy, // proxy SSL interception
+    ignoreHTTPSErrors: useProxy,
     extraHTTPHeaders: {
       "accept-language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7",
       "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
@@ -122,14 +91,9 @@ export async function createContext(useProxy = false): Promise<BrowserContext> {
 }
 
 export async function closeBrowser(): Promise<void> {
-  if (regularBrowser) {
-    await regularBrowser.close();
-    regularBrowser = null;
+  if (browser) {
+    await browser.close();
+    browser = null;
     console.log("🔴 Browser closed");
-  }
-  if (proxyBrowser) {
-    await proxyBrowser.close();
-    proxyBrowser = null;
-    console.log("🔴 Proxy browser closed");
   }
 }
