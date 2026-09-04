@@ -12,7 +12,7 @@ import type { ScrapedItem } from "./shopee.js";
  *  5. Close browser after each call for a fresh fingerprint next time.
  */
 export async function scrapeLazada(keyword: string): Promise<ScrapedItem[]> {
-  const context = await createContext();
+  const context = await createContext(true); // useProxy on Railway if SCRAPERAPI_KEY is set
   const page = await context.newPage();
   const results: ScrapedItem[] = [];
 

@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { createContext } from "./browser.js";
 import type { ScrapedItem } from "./shopee.js";
 
 /**
@@ -16,27 +16,8 @@ import type { ScrapedItem } from "./shopee.js";
  * Carries: laptops, desktops, phones, tablets, headphones, peripherals
  */
 export async function scrapeJIB(keyword: string): Promise<ScrapedItem[]> {
-  const browser = await chromium.launch({
-    headless: false,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--window-size=1366,768",
-      "--window-position=-8000,-8000",
-    ],
-    ignoreDefaultArgs: ["--enable-automation"],
-  });
-
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale: "th-TH",
-    timezoneId: "Asia/Bangkok",
-    viewport: { width: 1366, height: 768 },
-  });
-
+  // useProxy=true → routes through ScraperAPI on Railway when SCRAPERAPI_KEY is set
+  const context = await createContext(true);
   const page    = await context.newPage();
   const results: ScrapedItem[] = [];
 
@@ -121,8 +102,7 @@ export async function scrapeJIB(keyword: string): Promise<ScrapedItem[]> {
     console.error(`[JIB] Error "${keyword}":`, (err as Error).message);
   } finally {
     await context.close().catch(() => {});
-    await browser.close().catch(() => {});
-    console.log("[JIB] Browser closed");
+    console.log("[JIB] Context closed");
   }
 
   console.log(`[JIB] "${keyword}" → ${results.length} results`);

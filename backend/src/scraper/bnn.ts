@@ -66,7 +66,7 @@ export async function scrapeBNN(keyword: string): Promise<ScrapedItem[]> {
     return [];
   }
 
-  const context = await createContext();
+  const context = await createContext(true); // useProxy on Railway if SCRAPERAPI_KEY is set
   const page    = await context.newPage();
   const results: ScrapedItem[] = [];
 
