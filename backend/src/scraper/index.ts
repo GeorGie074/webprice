@@ -190,7 +190,17 @@ function bestMatch(
           const idx = rawLower.indexOf(id);
           return idx !== -1 && rawLower[idx + id.length] === "+";
         });
-      return { item: i, score, hasMustMatch: hasMustMatch && modelMatch && variantMatch && noSpuriousVariant && !hasPlusVariant };
+      // Storage size check: if product specifies storage (e.g. "256gb") and the scraped
+      // item specifies a DIFFERENT storage (e.g. "128gb"), reject the item.
+      // Prevents iPhone 17 256GB from matching iPhone 17 128GB listings.
+      const storageRe = /^(\d+)(gb|tb)$/;
+      const productStorage = keywords.find((k) => storageRe.test(k));     // e.g. "256gb"
+      const scrapedStorage  = words.find((w) => storageRe.test(w));       // e.g. "128gb"
+      const storageMatch =
+        !productStorage ||   // product doesn't specify storage → no constraint
+        !scrapedStorage  ||  // scraped item doesn't mention storage → allow (no info)
+        productStorage === scrapedStorage; // both mention storage → must match exactly
+      return { item: i, score, hasMustMatch: hasMustMatch && modelMatch && variantMatch && noSpuriousVariant && !hasPlusVariant && storageMatch };
     })
     .filter((c) => c.score >= minScore && c.hasMustMatch) // strict filter
     .sort((a, b) => b.score - a.score || a.item.price - b.item.price);
