@@ -194,9 +194,9 @@ export default function AdminLayout() {
               href="/"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
             >
-              <ExternalLink size={13} />
+              <ExternalLink size={12} />
               ดูหน้าเว็บ
             </a>
             <span className="badge bg-blue-100 text-blue-700 text-xs">Admin</span>
