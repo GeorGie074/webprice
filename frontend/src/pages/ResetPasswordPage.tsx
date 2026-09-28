@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from "lucide-react";
-import axios from "axios";
+import { authApi } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 export default function ResetPasswordPage() {
@@ -50,9 +50,9 @@ export default function ResetPasswordPage() {
 
     setLoading(true);
     try {
-      const { data } = await axios.post("/api/auth/reset-password", { token, password });
+      const { data } = await authApi.resetPassword(token, password);
       // Auto-login with returned JWT
-      login(data.token, data.user);
+      login(data.user, data.token);
       setSuccess(true);
       setTimeout(() => navigate("/"), 2000);
     } catch (err: any) {

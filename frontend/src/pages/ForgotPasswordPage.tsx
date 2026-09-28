@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Mail, ArrowLeft, CheckCircle } from "lucide-react";
-import axios from "axios";
+import { authApi } from "../api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail]     = useState("");
@@ -14,7 +14,7 @@ export default function ForgotPasswordPage() {
     setError("");
     setLoading(true);
     try {
-      await axios.post("/api/auth/forgot-password", { email });
+      await authApi.forgotPassword(email);
       setSent(true);
     } catch (err: any) {
       setError(err.response?.data?.message || "เกิดข้อผิดพลาด กรุณาลองใหม่");
