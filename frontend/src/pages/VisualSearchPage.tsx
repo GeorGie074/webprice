@@ -62,9 +62,10 @@ function resizeAndEncode(file: File): Promise<{ base64: string; mimeType: string
 export default function VisualSearchPage() {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [preview, setPreview]   = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [fileData, setFileData] = useState<{ base64: string; mimeType: string } | null>(null);
+  const [preview, setPreview]     = useState<string | null>(null);
+  const [dragOver, setDragOver]   = useState(false);
+  const [fileData, setFileData]   = useState<{ base64: string; mimeType: string } | null>(null);
+  const [fallbackQ, setFallbackQ] = useState("");
 
   // ── Mutation ────────────────────────────────────────────────────────────────
   const mutation = useMutation({
@@ -110,6 +111,7 @@ export default function VisualSearchPage() {
   const handleReset = () => {
     setPreview(null);
     setFileData(null);
+    setFallbackQ("");
     mutation.reset();
     if (inputRef.current) inputRef.current.value = "";
   };
@@ -205,26 +207,54 @@ export default function VisualSearchPage() {
             <div className="flex flex-col items-center gap-3 py-4">
               <div className="w-10 h-10 rounded-full border-4 border-purple-200 border-t-purple-500 animate-spin" />
               <p className="text-sm font-medium text-gray-600">Gemini กำลังวิเคราะห์รูปภาพ...</p>
-              <p className="text-xs text-gray-400">อาจใช้เวลา 2–5 วินาที</p>
+              <p className="text-xs text-gray-400">อาจใช้เวลา 5–20 วินาที (ลอง model สำรองถ้า server ยุ่ง)</p>
             </div>
           )}
         </div>
       )}
 
-      {/* ── Error ───────────────────────────────────────────────────────────── */}
+      {/* ── Error + Text Fallback ────────────────────────────────────────────── */}
       {mutation.isError && (
-        <div className="mt-6 p-4 rounded-2xl bg-red-50 border border-red-100 flex items-start gap-3">
-          <AlertCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-red-700">ระบุสินค้าไม่ได้</p>
-            <p className="text-xs text-red-500 mt-0.5">
-              {(mutation.error as any)?.response?.data?.error ??
-                "ไม่สามารถเชื่อมต่อกับ Gemini ได้ กรุณาตรวจสอบ API key"}
-            </p>
+        <div className="mt-6 space-y-3">
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+            <AlertCircle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-800">
+                Gemini ไม่พร้อมใช้งานชั่วคราว (server overloaded)
+              </p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                พิมพ์ชื่อสินค้าที่เห็นในรูปแทนได้เลยครับ
+              </p>
+            </div>
+            <button onClick={handleReset} className="text-amber-400 hover:text-amber-600 transition-colors shrink-0">
+              <RefreshCw size={15} />
+            </button>
           </div>
-          <button onClick={handleReset} className="text-red-400 hover:text-red-600 transition-colors shrink-0">
-            <RefreshCw size={15} />
-          </button>
+          {/* Manual text-search fallback */}
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (fallbackQ.trim()) navigate(`/search?q=${encodeURIComponent(fallbackQ.trim())}`);
+            }}
+          >
+            <input
+              autoFocus
+              type="text"
+              value={fallbackQ}
+              onChange={(e) => setFallbackQ(e.target.value)}
+              placeholder="พิมพ์ชื่อสินค้า เช่น iPhone 15 Pro Max..."
+              className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400"
+            />
+            <button
+              type="submit"
+              disabled={!fallbackQ.trim()}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 disabled:opacity-40 transition-colors"
+            >
+              <Search size={15} />
+              ค้นหา
+            </button>
+          </form>
         </div>
       )}
 
