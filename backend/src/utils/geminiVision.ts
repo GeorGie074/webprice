@@ -2,18 +2,19 @@
  * geminiVision.ts — Identify a product from an image using Google Gemini Flash.
  *
  * Free tier: 1,500 requests/day — plenty for an educational project.
- * Model: gemini-1.5-flash (stable, fast, supports image input)
+ * Tries gemini-3.8-flash first (newest), falls back to gemini-1.5-flash.
+ * Retries once on 503 (high demand) before switching model.
  */
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 
 export interface ProductIdentification {
-  brand: string;          // e.g. "Apple", "Samsung"
-  name: string;           // e.g. "iPhone 15 Pro Max"
-  model: string;          // e.g. "15 Pro Max", "WH-1000XM5"
-  keywords: string[];     // short English search terms ["iphone 15 pro", "apple phone"]
-  category: string;       // one of our supported categories
+  brand: string;       // e.g. "Apple", "Samsung"
+  name: string;        // e.g. "iPhone 15 Pro Max"
+  model: string;       // e.g. "15 Pro Max", "WH-1000XM5"
+  keywords: string[];  // short English search terms
+  category: string;    // one of our supported categories
   confidence: "high" | "medium" | "low";
 }
 
@@ -33,11 +34,22 @@ Respond with ONLY a valid JSON object — no markdown, no explanation:
 
 If you cannot identify the product at all, respond with exactly: null`;
 
+const MODELS = ["gemini-3.8-flash", "gemini-1.5-flash"];
+
+function parseResponse(text: string): ProductIdentification | null {
+  if (!text || text === "null") return null;
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) { console.warn("[GeminiVision] No JSON in response:", text.slice(0, 200)); return null; }
+  const parsed: ProductIdentification = JSON.parse(jsonMatch[0]);
+  if (!parsed.brand || !parsed.name || !Array.isArray(parsed.keywords)) {
+    console.warn("[GeminiVision] Incomplete response:", parsed); return null;
+  }
+  return parsed;
+}
+
 /**
- * Send a base64-encoded image to Gemini Flash and get product identification.
- *
- * @param base64Image  Raw base64 string (no data:... prefix needed)
- * @param mimeType     e.g. "image/jpeg" | "image/png" | "image/webp"
+ * Send a base64-encoded image to Gemini and get product identification.
+ * Automatically retries on 503 and falls back to an older model if needed.
  */
 export async function identifyProductFromImage(
   base64Image: string,
@@ -48,46 +60,33 @@ export async function identifyProductFromImage(
     return null;
   }
 
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
+  let lastError: Error | null = null;
 
-    const result = await model.generateContent([
-      PROMPT,
-      {
-        inlineData: {
-          mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp",
-          data: base64Image,
-        },
-      },
-    ]);
-
-    const text = result.response.text().trim();
-    console.log("[GeminiVision] Raw response:", text.slice(0, 300));
-
-    // Handle explicit null response
-    if (text === "null" || text === "") return null;
-
-    // Extract JSON (strip any accidental markdown code fence)
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn("[GeminiVision] No JSON found in response:", text.slice(0, 200));
-      return null;
+  for (const modelName of MODELS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent([
+          PROMPT,
+          { inlineData: { mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp", data: base64Image } },
+        ]);
+        const text = result.response.text().trim();
+        console.log(`[GeminiVision] ${modelName} attempt=${attempt}:`, text.slice(0, 200));
+        const parsed = parseResponse(text);
+        if (parsed) console.log(`[GeminiVision] ✅ ${parsed.brand} ${parsed.model} (${parsed.confidence})`);
+        return parsed;
+      } catch (err) {
+        lastError = err as Error;
+        const is503 = lastError.message.includes("503") || lastError.message.includes("high demand");
+        console.warn(`[GeminiVision] ❌ ${modelName} attempt=${attempt}:`, lastError.message.slice(0, 150));
+        if (is503 && attempt < 2) {
+          await new Promise(r => setTimeout(r, 1500)); // wait 1.5s then retry
+        } else if (!is503) {
+          break; // not a transient error — skip to next model
+        }
+      }
     }
-
-    const parsed: ProductIdentification = JSON.parse(jsonMatch[0]);
-
-    // Basic sanity check
-    if (!parsed.brand || !parsed.name || !Array.isArray(parsed.keywords)) {
-      console.warn("[GeminiVision] Incomplete response:", parsed);
-      return null;
-    }
-
-    console.log(`[GeminiVision] Identified: ${parsed.brand} ${parsed.model} (${parsed.confidence})`);
-    return parsed;
-  } catch (err) {
-    const msg = (err as Error).message;
-    console.error("[GeminiVision] Error:", msg);
-    // Re-throw with a cleaner message for the route to catch
-    throw new Error(msg);
   }
+
+  throw lastError ?? new Error("All Gemini models unavailable");
 }
