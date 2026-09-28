@@ -12,6 +12,7 @@
  */
 import express from "express";
 import { identifyProductFromImage } from "../utils/geminiVision.js";
+import { identifyProductWithGroq } from "../utils/groqVision.js";
 import Product from "../models/Product.js";
 
 const router = express.Router();
@@ -46,16 +47,28 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "image (base64) is required" });
   }
 
-  // ── 1. Identify product with Gemini Vision ──────────────────────────────────
+  // ── 1. Identify product — Groq first, Gemini as fallback ───────────────────
   let identification;
   try {
-    identification = await identifyProductFromImage(image, mimeType);
+    // Try Groq first (faster, more reliable free tier)
+    const groqResult = await identifyProductWithGroq(image, mimeType).catch((err) => {
+      console.warn("[VisualSearch] Groq failed, falling back to Gemini:", (err as Error).message.slice(0, 100));
+      return null; // null = trigger Gemini fallback
+    });
+
+    if (groqResult !== null) {
+      // Groq returned a result (even undefined-identification is fine here)
+      identification = groqResult;
+    } else {
+      // Groq skipped (no key) or failed → try Gemini
+      console.log("[VisualSearch] Trying Gemini...");
+      identification = await identifyProductFromImage(image, mimeType);
+    }
   } catch (err) {
     const msg = (err as Error).message;
-    console.error("[VisualSearch] Gemini error:", msg);
-    // Surface the real error to the frontend for easier debugging
+    console.error("[VisualSearch] All vision APIs failed:", msg);
     return res.status(502).json({
-      error: `Gemini API error: ${msg}`,
+      error: `ระบบระบุสินค้าไม่พร้อมใช้งานชั่วคราว (${msg.slice(0, 120)})`,
       identification: null,
       products: [],
       searchKeyword: "",
