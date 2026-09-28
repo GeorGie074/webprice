@@ -17,7 +17,7 @@ import Product from "../models/Product.js";
 
 const router = express.Router();
 
-// GET /api/visual-search/models — list all models available for this API key
+// GET /api/visual-search/models — list Gemini models for this API key
 router.get("/models", async (_req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY ?? "";
@@ -30,8 +30,29 @@ router.get("/models", async (_req, res) => {
       name: m.name,
       supportsGenerate: m.supportedGenerationMethods?.includes("generateContent"),
     }));
-    console.log("[VisualSearch] Available models:", models);
     return res.json({ models });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/visual-search/groq-models — list Groq models to find vision-capable ones
+router.get("/groq-models", async (_req, res) => {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return res.json({ error: "GROQ_API_KEY not set" });
+  try {
+    const resp = await fetch("https://api.groq.com/openai/v1/models", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const data = await resp.json() as { data?: { id: string; object: string }[]; error?: unknown };
+    if (!resp.ok || data.error) return res.json({ error: data.error });
+    // Filter likely vision models
+    const all = (data.data ?? []).map((m) => m.id).sort();
+    const vision = all.filter((id) =>
+      id.includes("vision") || id.includes("llava") || id.includes("scout") ||
+      id.includes("maverick") || id.includes("llama-4") || id.includes("3.2")
+    );
+    return res.json({ vision, all });
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message });
   }
