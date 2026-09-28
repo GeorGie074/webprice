@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, Package, FileText,
   LogOut, ShoppingBag, ChevronRight, Zap, Activity, Tag, BarChart3,
-  X, CheckCircle2, AlertCircle,
+  X, CheckCircle2, AlertCircle, ExternalLink,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -189,7 +189,16 @@ export default function AdminLayout() {
           <span className="text-xs text-gray-400">Admin</span>
           <ChevronRight size={13} className="text-gray-300" />
           <span className="text-sm text-gray-700 font-medium">{currentTitle}</span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <a
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 transition-colors"
+            >
+              <ExternalLink size={13} />
+              ดูหน้าเว็บ
+            </a>
             <span className="badge bg-blue-100 text-blue-700 text-xs">Admin</span>
           </div>
         </div>
