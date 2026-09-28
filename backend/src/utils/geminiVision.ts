@@ -34,7 +34,7 @@ Respond with ONLY a valid JSON object — no markdown, no explanation:
 
 If you cannot identify the product at all, respond with exactly: null`;
 
-const MODELS = ["gemini-3.8-flash", "gemini-1.5-flash"];
+const MODELS = ["gemini-3.8-flash"];
 
 function parseResponse(text: string): ProductIdentification | null {
   if (!text || text === "null") return null;
@@ -63,7 +63,8 @@ export async function identifyProductFromImage(
   let lastError: Error | null = null;
 
   for (const modelName of MODELS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    const delays = [1000, 2000, 4000]; // retry up to 3 times on 503
+    for (let attempt = 1; attempt <= 4; attempt++) {
       try {
         const model = genAI.getGenerativeModel({ model: modelName });
         const result = await model.generateContent([
@@ -77,12 +78,14 @@ export async function identifyProductFromImage(
         return parsed;
       } catch (err) {
         lastError = err as Error;
-        const is503 = lastError.message.includes("503") || lastError.message.includes("high demand");
+        const is503 = lastError.message.includes("503") || lastError.message.includes("high demand") || lastError.message.includes("overloaded");
         console.warn(`[GeminiVision] ❌ ${modelName} attempt=${attempt}:`, lastError.message.slice(0, 150));
-        if (is503 && attempt < 2) {
-          await new Promise(r => setTimeout(r, 1500)); // wait 1.5s then retry
-        } else if (!is503) {
-          break; // not a transient error — skip to next model
+        if (is503 && attempt <= 3) {
+          const wait = delays[attempt - 1];
+          console.log(`[GeminiVision] 503 — waiting ${wait}ms before retry...`);
+          await new Promise(r => setTimeout(r, wait));
+        } else {
+          break; // non-503 or exhausted retries
         }
       }
     }
