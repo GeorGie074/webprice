@@ -34,7 +34,8 @@ Respond with ONLY a valid JSON object — no markdown, no explanation:
 
 If you cannot identify the product at all, respond with exactly: null`;
 
-const MODELS = ["gemini-3.8-flash"];
+// Priority: image-specific model → general flash → older stable flash
+const MODELS = ["gemini-2.5-flash-image", "gemini-2.5-flash", "gemini-3.5-flash"];
 
 function parseResponse(text: string): ProductIdentification | null {
   if (!text || text === "null") return null;
