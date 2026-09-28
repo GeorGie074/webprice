@@ -1,9 +1,11 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
 import { protect, AuthRequest } from "../middleware/auth.js";
+import { sendPasswordResetEmail } from "../utils/mailer.js";
 
 const router = express.Router();
 
@@ -153,6 +155,98 @@ router.post("/google", async (req, res) => {
   } catch (err) {
     console.error("Google auth error:", err);
     res.status(400).json({ message: "การยืนยันตัวตน Google ล้มเหลว กรุณาลองใหม่" });
+  }
+});
+
+// ── POST /api/auth/forgot-password ─────────────────────────────────────────
+// Step 1: user submits email → generate token → send reset link
+router.post("/forgot-password", async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    res.status(400).json({ message: "กรุณากรอกอีเมล" });
+    return;
+  }
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+    // Always return 200 — don't reveal whether the email exists
+    if (!user || !user.password) {
+      res.json({ message: "หากอีเมลนี้มีในระบบ เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปให้" });
+      return;
+    }
+
+    // Generate a random 32-byte token, store its SHA-256 hash in DB
+    const rawToken  = crypto.randomBytes(32).toString("hex");
+    const hashToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    user.passwordResetToken   = hashToken;
+    user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await user.save();
+
+    const appUrl  = process.env.APP_URL ?? "http://localhost:5173";
+    const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+
+    await sendPasswordResetEmail({
+      to:       user.email,
+      userName: user.name,
+      resetUrl,
+    });
+
+    res.json({ message: "หากอีเมลนี้มีในระบบ เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปให้" });
+  } catch (err) {
+    console.error("[auth] forgot-password error:", err);
+    res.status(500).json({ message: "เกิดข้อผิดพลาด กรุณาลองใหม่" });
+  }
+});
+
+// ── POST /api/auth/reset-password ──────────────────────────────────────────
+// Step 2: user submits new password + token from email link
+router.post("/reset-password", async (req, res) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน" });
+    return;
+  }
+  if (password.length < 6) {
+    res.status(400).json({ message: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร" });
+    return;
+  }
+
+  try {
+    const hashToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    // Find user with matching token that hasn't expired yet
+    // Must use +passwordResetToken to override select:false
+    const user = await User
+      .findOne({
+        passwordResetToken:   hashToken,
+        passwordResetExpires: { $gt: new Date() },
+      })
+      .select("+passwordResetToken +passwordResetExpires");
+
+    if (!user) {
+      res.status(400).json({ message: "ลิงก์รีเซ็ตรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว" });
+      return;
+    }
+
+    // Update password and clear the reset token
+    user.password             = await bcrypt.hash(password, 10);
+    user.passwordResetToken   = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+
+    // Auto-login: return a fresh JWT
+    const jwtToken = signToken(user.id);
+    res.json({
+      message: "เปลี่ยนรหัสผ่านสำเร็จ",
+      token:   jwtToken,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    });
+  } catch (err) {
+    console.error("[auth] reset-password error:", err);
+    res.status(500).json({ message: "เกิดข้อผิดพลาด กรุณาลองใหม่" });
   }
 });
 

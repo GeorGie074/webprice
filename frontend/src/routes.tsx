@@ -11,6 +11,8 @@ import { AuthGuard } from "./guards/AuthGuard";
 // User pages
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import SearchPage from "./pages/SearchPage";
 import ProductDetailPage from "./pages/ProductDetailPage";
 import UserDashboardPage from "./pages/UserDashboardPage";
@@ -30,8 +32,10 @@ import AdminAnalyticsPage from "./pages/admin/AdminAnalyticsPage";
 
 const router = createBrowserRouter([
   // ─── Auth ──────────────────────────────────────────────────────────────────
-  { path: "/login", element: <LoginPage /> },
-  { path: "/admin/login", element: <AdminLoginPage /> },
+  { path: "/login",            element: <LoginPage /> },
+  { path: "/forgot-password",  element: <ForgotPasswordPage /> },
+  { path: "/reset-password",   element: <ResetPasswordPage /> },
+  { path: "/admin/login",      element: <AdminLoginPage /> },
 
   // ─── User routes ───────────────────────────────────────────────────────────
   {

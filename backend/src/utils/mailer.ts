@@ -28,6 +28,108 @@ function getTransporter(): nodemailer.Transporter | null {
   return _transporter;
 }
 
+export interface PasswordResetMailOptions {
+  to:        string;
+  userName:  string;
+  resetUrl:  string;
+}
+
+/**
+ * Send a password-reset email.
+ * Returns true on success, false if email is not configured or sending fails.
+ */
+export async function sendPasswordResetEmail(opts: PasswordResetMailOptions): Promise<boolean> {
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.log(`[mailer] Email not configured — skipping reset email to ${opts.to}`);
+    return false;
+  }
+
+  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@pricecompare.th";
+
+  const html = `
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>รีเซ็ตรหัสผ่าน</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="520" cellpadding="0" cellspacing="0"
+          style="background:#ffffff;border-radius:16px;overflow:hidden;
+                 box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#2563eb,#1d4ed8);
+                       padding:28px 32px;text-align:center;">
+              <p style="margin:0;color:#bfdbfe;font-size:13px;text-transform:uppercase;
+                        letter-spacing:1.5px;">PriceCompare</p>
+              <h1 style="margin:8px 0 0;color:#ffffff;font-size:22px;font-weight:700;">
+                🔐 รีเซ็ตรหัสผ่าน
+              </h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px;">
+              <p style="margin:0 0 16px;color:#374151;font-size:15px;">
+                สวัสดีคุณ <strong>${opts.userName}</strong>,
+              </p>
+              <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6;">
+                เราได้รับคำขอรีเซ็ตรหัสผ่านสำหรับบัญชีของคุณ
+                กดปุ่มด้านล่างเพื่อตั้งรหัสผ่านใหม่
+                ลิงก์นี้จะหมดอายุใน <strong>1 ชั่วโมง</strong>
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td align="center">
+                    <a href="${opts.resetUrl}"
+                      style="display:inline-block;background:#2563eb;color:#ffffff;
+                             font-size:15px;font-weight:600;padding:14px 32px;
+                             border-radius:12px;text-decoration:none;">
+                      ตั้งรหัสผ่านใหม่ →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">
+                หากคุณไม่ได้ขอรีเซ็ตรหัสผ่าน สามารถเพิกเฉยต่ออีเมลนี้ได้เลย
+                รหัสผ่านของคุณจะไม่มีการเปลี่ยนแปลงใดๆ
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#f9fafb;padding:20px 32px;
+                       border-top:1px solid #f3f4f6;text-align:center;">
+              <p style="margin:0;color:#9ca3af;font-size:12px;">
+                PriceCompare — เปรียบเทียบราคาสินค้าออนไลน์
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    await transporter.sendMail({
+      from:    `"PriceCompare" <${from}>`,
+      to:      opts.to,
+      subject: "🔐 รีเซ็ตรหัสผ่าน PriceCompare",
+      html,
+    });
+    console.log(`[mailer] ✅ Sent password reset email to ${opts.to}`);
+    return true;
+  } catch (err) {
+    console.error(`[mailer] ❌ Failed reset email to ${opts.to}:`, (err as Error).message);
+    return false;
+  }
+}
+
 export interface PriceAlertMailOptions {
   to: string;
   userName: string;

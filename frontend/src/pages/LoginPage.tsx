@@ -186,6 +186,15 @@ export default function LoginPage() {
                   </div>
                 </div>
 
+                <div className="flex justify-end">
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    ลืมรหัสผ่าน?
+                  </Link>
+                </div>
+
                 <button type="submit" disabled={loading} className="btn-primary w-full flex justify-center items-center gap-2">
                   {loading ? (
                     <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />กำลังตรวจสอบ...</>

@@ -15,6 +15,10 @@ export interface IUser extends Document {
   suspended: boolean;
   /** Last 30 search queries the user performed */
   searchHistory: Array<{ query: string; at: Date }>;
+  /** Password reset — SHA-256 hash of the one-time token sent by email */
+  passwordResetToken?:   string;
+  /** When the reset token expires (1 hour after issue) */
+  passwordResetExpires?: Date;
   createdAt: Date;
 }
 
@@ -28,7 +32,9 @@ const userSchema = new mongoose.Schema<IUser>(
     avatar:   { type: String },
     lineNotifyToken: { type: String },
     wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: "Product" }],
-    suspended: { type: Boolean, default: false },
+    suspended:            { type: Boolean, default: false },
+    passwordResetToken:   { type: String, select: false },  // never returned in normal queries
+    passwordResetExpires: { type: Date,   select: false },
     searchHistory: {
       type: [{ query: String, at: { type: Date, default: Date.now }, _id: false }],
       default: [],
