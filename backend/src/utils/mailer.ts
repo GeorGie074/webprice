@@ -14,9 +14,13 @@ function getResend(): Resend | null {
   return _resend;
 }
 
-/** FROM address — use a verified domain address, or fall back to Resend's test sender */
+/**
+ * FROM address for outgoing mail.
+ * Set RESEND_FROM env var to a verified domain address (e.g. "noreply@yourdomain.com").
+ * Without it, falls back to Resend's shared test sender (works for testing, no domain needed).
+ */
 function getFrom(): string {
-  return process.env.SMTP_FROM ?? "PriceCompare <onboarding@resend.dev>";
+  return process.env.RESEND_FROM ?? "PriceCompare <onboarding@resend.dev>";
 }
 
 export interface PasswordResetMailOptions {
