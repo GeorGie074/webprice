@@ -1,27 +1,32 @@
-import { Resend } from "resend";
+import axios from "axios";
 
-/**
- * Lazily-created Resend client.
- * Returns null when RESEND_API_KEY is not set.
- */
-let _resend: Resend | null = null;
+const BREVO_URL = "https://api.brevo.com/v3/smtp/email";
 
-function getResend(): Resend | null {
-  if (_resend) return _resend;
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return null;
-  _resend = new Resend(key);
-  return _resend;
+function getApiKey(): string | null {
+  return process.env.BREVO_API_KEY ?? null;
 }
 
-/**
- * FROM address for outgoing mail.
- * Set RESEND_FROM env var to a verified domain address (e.g. "noreply@yourdomain.com").
- * Without it, falls back to Resend's shared test sender (works for testing, no domain needed).
- */
-function getFrom(): string {
-  return process.env.RESEND_FROM ?? "PriceCompare <onboarding@resend.dev>";
+function getSender() {
+  return {
+    name:  "PriceCompare",
+    email: process.env.BREVO_FROM ?? "anansit.wa@gmail.com",
+  };
 }
+
+async function sendViaBrevo(payload: object): Promise<void> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("BREVO_API_KEY not set");
+
+  const { data } = await axios.post(BREVO_URL, payload, {
+    headers: {
+      "api-key":      apiKey,
+      "Content-Type": "application/json",
+    },
+  });
+  return data;
+}
+
+// ─── Password Reset ────────────────────────────────────────────────────────────
 
 export interface PasswordResetMailOptions {
   to:        string;
@@ -29,18 +34,11 @@ export interface PasswordResetMailOptions {
   resetUrl:  string;
 }
 
-/**
- * Send a password-reset email.
- * Returns true on success, false if email is not configured or sending fails.
- */
 export async function sendPasswordResetEmail(opts: PasswordResetMailOptions): Promise<boolean> {
-  const resend = getResend();
-  if (!resend) {
-    console.log(`[mailer] RESEND_API_KEY not set — skipping reset email to ${opts.to}`);
+  if (!getApiKey()) {
+    console.log(`[mailer] BREVO_API_KEY not set — skipping reset email to ${opts.to}`);
     return false;
   }
-
-  const from = getFrom();
 
   const html = `
 <!DOCTYPE html>
@@ -111,23 +109,22 @@ export async function sendPasswordResetEmail(opts: PasswordResetMailOptions): Pr
 </html>`;
 
   try {
-    const { error } = await resend.emails.send({
-      from,
-      to:      opts.to,
-      subject: "🔐 รีเซ็ตรหัสผ่าน PriceCompare",
-      html,
+    await sendViaBrevo({
+      sender:      getSender(),
+      to:          [{ email: opts.to, name: opts.userName }],
+      subject:     "🔐 รีเซ็ตรหัสผ่าน PriceCompare",
+      htmlContent: html,
     });
-    if (error) {
-      console.error(`[mailer] ❌ Failed reset email to ${opts.to}:`, error.message);
-      return false;
-    }
     console.log(`[mailer] ✅ Sent password reset email to ${opts.to}`);
     return true;
-  } catch (err) {
-    console.error(`[mailer] ❌ Failed reset email to ${opts.to}:`, (err as Error).message);
+  } catch (err: any) {
+    const msg = err?.response?.data?.message ?? (err as Error).message;
+    console.error(`[mailer] ❌ Failed reset email to ${opts.to}:`, msg);
     return false;
   }
 }
+
+// ─── Price Alert ───────────────────────────────────────────────────────────────
 
 export interface PriceAlertMailOptions {
   to: string;
@@ -139,18 +136,12 @@ export interface PriceAlertMailOptions {
   currentPrice: number;
 }
 
-/**
- * Send a price-drop alert email.
- * Returns true on success, false if email is not configured or sending fails.
- */
 export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<boolean> {
-  const resend = getResend();
-  if (!resend) {
-    console.log(`[mailer] RESEND_API_KEY not set — skipping alert to ${opts.to}`);
+  if (!getApiKey()) {
+    console.log(`[mailer] BREVO_API_KEY not set — skipping alert to ${opts.to}`);
     return false;
   }
 
-  const from = getFrom();
   const pctOff = opts.targetPrice > 0
     ? Math.round(((opts.targetPrice - opts.currentPrice) / opts.targetPrice) * 100)
     : 0;
@@ -170,8 +161,6 @@ export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<
         <table width="520" cellpadding="0" cellspacing="0"
           style="background:#ffffff;border-radius:16px;overflow:hidden;
                  box-shadow:0 4px 20px rgba(0,0,0,0.08);">
-
-          <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#2563eb,#1d4ed8);
                        padding:28px 32px;text-align:center;">
@@ -182,8 +171,6 @@ export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<
               </h1>
             </td>
           </tr>
-
-          <!-- Body -->
           <tr>
             <td style="padding:32px;">
               <p style="margin:0 0 20px;color:#374151;font-size:15px;">
@@ -192,8 +179,6 @@ export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<
               <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6;">
                 สินค้าที่คุณตั้งแจ้งเตือนไว้มีราคาลดลงถึงเป้าหมายของคุณแล้ว!
               </p>
-
-              <!-- Product card -->
               <table width="100%" cellpadding="0" cellspacing="0"
                 style="background:#f9fafb;border:1px solid #e5e7eb;
                        border-radius:12px;overflow:hidden;margin-bottom:24px;">
@@ -204,41 +189,29 @@ export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<
                              border:1px solid #e5e7eb;display:block;" />
                   </td>
                   <td style="padding:20px 20px 20px 0;vertical-align:top;">
-                    <p style="margin:0 0 12px;color:#111827;font-size:15px;font-weight:600;
-                               line-height:1.4;">
+                    <p style="margin:0 0 12px;color:#111827;font-size:15px;font-weight:600;line-height:1.4;">
                       ${opts.productName}
                     </p>
                     <table cellpadding="0" cellspacing="0">
                       <tr>
                         <td style="padding-right:16px;">
-                          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase;
-                                     letter-spacing:0.5px;">ราคาเป้าหมาย</p>
-                          <p style="margin:4px 0 0;color:#111827;font-size:18px;font-weight:700;">
-                            ฿${opts.targetPrice.toLocaleString()}
-                          </p>
+                          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">ราคาเป้าหมาย</p>
+                          <p style="margin:4px 0 0;color:#111827;font-size:18px;font-weight:700;">฿${opts.targetPrice.toLocaleString()}</p>
                         </td>
                         <td style="padding-right:16px;">
-                          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase;
-                                     letter-spacing:0.5px;">ราคาปัจจุบัน</p>
-                          <p style="margin:4px 0 0;color:#16a34a;font-size:18px;font-weight:700;">
-                            ฿${opts.currentPrice.toLocaleString()}
-                          </p>
+                          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">ราคาปัจจุบัน</p>
+                          <p style="margin:4px 0 0;color:#16a34a;font-size:18px;font-weight:700;">฿${opts.currentPrice.toLocaleString()}</p>
                         </td>
                         ${pctOff > 0 ? `
                         <td>
-                          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase;
-                                     letter-spacing:0.5px;">ลดลง</p>
-                          <p style="margin:4px 0 0;color:#16a34a;font-size:18px;font-weight:700;">
-                            ${pctOff}%
-                          </p>
+                          <p style="margin:0;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">ลดลง</p>
+                          <p style="margin:4px 0 0;color:#16a34a;font-size:18px;font-weight:700;">${pctOff}%</p>
                         </td>` : ""}
                       </tr>
                     </table>
                   </td>
                 </tr>
               </table>
-
-              <!-- CTA -->
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
@@ -253,8 +226,6 @@ export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<
               </table>
             </td>
           </tr>
-
-          <!-- Footer -->
           <tr>
             <td style="background:#f9fafb;padding:20px 32px;
                        border-top:1px solid #f3f4f6;text-align:center;">
@@ -268,24 +239,20 @@ export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<
     </tr>
   </table>
 </body>
-</html>
-`;
+</html>`;
 
   try {
-    const { error } = await resend.emails.send({
-      from,
-      to:      opts.to,
-      subject: `🎉 ${opts.productName} ราคาถึงเป้าหมาย ฿${opts.currentPrice.toLocaleString()} แล้ว!`,
-      html,
+    await sendViaBrevo({
+      sender:      getSender(),
+      to:          [{ email: opts.to, name: opts.userName }],
+      subject:     `🎉 ${opts.productName} ราคาถึงเป้าหมาย ฿${opts.currentPrice.toLocaleString()} แล้ว!`,
+      htmlContent: html,
     });
-    if (error) {
-      console.error(`[mailer] ❌ Failed to send to ${opts.to}:`, error.message);
-      return false;
-    }
     console.log(`[mailer] ✅ Sent price alert to ${opts.to} for "${opts.productName}"`);
     return true;
-  } catch (err) {
-    console.error(`[mailer] ❌ Failed to send to ${opts.to}:`, (err as Error).message);
+  } catch (err: any) {
+    const msg = err?.response?.data?.message ?? (err as Error).message;
+    console.error(`[mailer] ❌ Failed to send to ${opts.to}:`, msg);
     return false;
   }
 }
