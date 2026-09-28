@@ -260,4 +260,31 @@ router.get("/me", protect, async (req: AuthRequest, res) => {
   }
 });
 
+// ── PATCH /api/auth/profile ─────────────────────────────────────────────────
+// Update display name and/or avatar (base64 or URL, max ~200 KB)
+router.patch("/profile", protect, async (req: AuthRequest, res) => {
+  const { name, avatar } = req.body;
+
+  if (name !== undefined && typeof name === "string" && !name.trim()) {
+    res.status(400).json({ message: "ชื่อต้องไม่เว้นว่าง" });
+    return;
+  }
+
+  try {
+    const user = await User.findById(req.user?.id);
+    if (!user) { res.status(404).json({ message: "ไม่พบผู้ใช้" }); return; }
+
+    if (name?.trim())        user.name   = name.trim();
+    if (avatar !== undefined) user.avatar = avatar || undefined;
+
+    await user.save();
+
+    res.json({
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, avatar: user.avatar },
+    });
+  } catch {
+    res.status(500).json({ message: "เกิดข้อผิดพลาด" });
+  }
+});
+
 export default router;

@@ -40,6 +40,8 @@ export const authApi = {
     api.post("/auth/forgot-password", { email }),
   resetPassword: (token: string, password: string) =>
     api.post("/auth/reset-password", { token, password }),
+  updateProfile: (data: { name?: string; avatar?: string }) =>
+    api.patch("/auth/profile", data),
 };
 
 // ─── Products ─────────────────────────────────────────────────────────────────

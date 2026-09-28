@@ -8,6 +8,7 @@ interface AuthContextType {
   isAdmin: boolean;
   login: (user: User, token: string) => void;
   logout: () => void;
+  updateUser: (partial: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -39,6 +40,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("token");
   };
 
+  const updateUser = (partial: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...partial };
+      localStorage.setItem("user", JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -48,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin: user?.role === "admin",
         login,
         logout,
+        updateUser,
       }}
     >
       {children}

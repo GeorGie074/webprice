@@ -1,15 +1,16 @@
 import { useAuth } from "../context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { alertsApi, wishlistApi } from "../api";
+import { alertsApi, wishlistApi, authApi } from "../api";
 import { Alert, Product } from "../types";
 import { proxyImage } from "../utils/imageUrl";
 import {
   Bell, Trash2, CheckCircle, Clock, User, Shield,
   TrendingDown, Package, ArrowUpRight, ShoppingBag,
   Heart, MessageCircle, ExternalLink, X, Mail, Sparkles,
+  Camera, Pencil,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { ProductCard } from "../components/ui/ProductCard";
 
 type MainTab = "alerts" | "wishlist" | "settings";
@@ -112,6 +113,139 @@ function PriceDiffBar({ current, target }: { current: number; target: number }) 
       {isBelow && (
         <span className="text-xs text-green-600 font-medium">ถึงเป้าแล้ว!</span>
       )}
+    </div>
+  );
+}
+
+/* ── Profile edit card ───────────────────────────────────────────────────── */
+function ProfileCard() {
+  const { user, updateUser } = useAuth();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [name, setName]       = useState(user?.name ?? "");
+  const [preview, setPreview] = useState<string>(user?.avatar ?? "");
+  const [msg, setMsg]         = useState<{ ok: boolean; text: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Compress & convert uploaded image to base64
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const SIZE = 200;
+        const canvas = document.createElement("canvas");
+        const ratio = Math.min(SIZE / img.width, SIZE / img.height);
+        canvas.width  = img.width  * ratio;
+        canvas.height = img.height * ratio;
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setPreview(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    setMsg(null);
+    try {
+      const { data } = await authApi.updateProfile({
+        name:   name.trim() || undefined,
+        avatar: preview || "",
+      });
+      updateUser(data.user);
+      setMsg({ ok: true, text: "บันทึกสำเร็จแล้ว!" });
+    } catch (err: any) {
+      setMsg({ ok: false, text: err?.response?.data?.message ?? "เกิดข้อผิดพลาด" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const initials = (user?.name ?? "?")[0].toUpperCase();
+
+  return (
+    <div className="card p-5">
+      <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+        <User size={15} className="text-gray-400" /> ข้อมูลบัญชี
+      </h3>
+
+      {/* Avatar */}
+      <div className="flex items-center gap-4 mb-5">
+        <div className="relative shrink-0">
+          {preview ? (
+            <img src={preview} alt="avatar"
+              className="w-20 h-20 rounded-full object-cover border-2 border-gray-200" />
+          ) : (
+            <div className="w-20 h-20 rounded-full bg-blue-600 flex items-center justify-center text-white text-2xl font-bold border-2 border-blue-200">
+              {initials}
+            </div>
+          )}
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="absolute bottom-0 right-0 w-7 h-7 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow hover:bg-gray-50 transition-colors"
+          >
+            <Camera size={13} className="text-gray-600" />
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
+          <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+          {preview && (
+            <button onClick={() => setPreview("")}
+              className="text-xs text-red-400 hover:text-red-600 mt-1">
+              ลบรูป
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Name field */}
+      <div className="space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">ชื่อที่แสดง</label>
+          <div className="relative">
+            <Pencil size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text" value={name} onChange={(e) => setName(e.target.value)}
+              className="input pl-8 text-sm"
+              placeholder="ชื่อ-นามสกุล"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">อีเมล</label>
+          <p className="text-sm text-gray-700 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100">
+            {user?.email}
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">ประเภทบัญชี</label>
+          <p className="text-sm text-gray-700 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 capitalize">
+            {user?.role}
+          </p>
+        </div>
+
+        {msg && (
+          <p className={`text-sm flex items-center gap-1.5 ${msg.ok ? "text-green-600" : "text-red-500"}`}>
+            {msg.ok ? <CheckCircle size={14} /> : <X size={14} />}
+            {msg.text}
+          </p>
+        )}
+
+        <button
+          onClick={handleSave}
+          disabled={loading || (!name.trim() && preview === (user?.avatar ?? ""))}
+          className="btn-primary w-full text-sm"
+        >
+          {loading ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -599,26 +733,8 @@ export default function UserDashboardPage() {
           {/* Email notifications */}
           <EmailNotificationCard email={user?.email ?? ""} />
 
-          {/* Account info */}
-          <div className="card p-5">
-            <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-              <User size={15} className="text-gray-400" /> ข้อมูลบัญชี
-            </h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">ชื่อ</span>
-                <span className="font-medium text-gray-900">{user?.name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">อีเมล</span>
-                <span className="font-medium text-gray-900">{user?.email}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">ประเภทบัญชี</span>
-                <span className="font-medium text-gray-900 capitalize">{user?.role}</span>
-              </div>
-            </div>
-          </div>
+          {/* Account info — editable */}
+          <ProfileCard />
         </div>
       )}
     </div>
