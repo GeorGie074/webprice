@@ -32,10 +32,24 @@ async function main() {
     process.exit(1);
   }
 
+  // ── Parse CLI args ──────────────────────────────────────────────
+  // Usage examples:
+  //   npx tsx src/scripts/runScraper.ts                    → all products
+  //   npx tsx src/scripts/runScraper.ts --name "iphone 17" → filtered by name
+  //   npx tsx src/scripts/runScraper.ts --id <mongoId>     → single product
+  const args = process.argv.slice(2);
+  const nameIdx = args.indexOf("--name");
+  const idIdx   = args.indexOf("--id");
+  const nameFilter = nameIdx !== -1 ? args[nameIdx + 1] : undefined;
+  const idFilter   = idIdx   !== -1 ? args[idIdx   + 1] : undefined;
+
+  if (nameFilter) console.log(`🔍 กรองเฉพาะสินค้าที่ชื่อมี: "${nameFilter}"\n`);
+  if (idFilter)   console.log(`🔍 รันเฉพาะ product ID: ${idFilter}\n`);
+
   // ── Run Scraper ─────────────────────────────────────────────────
   let exitCode = 0;
   try {
-    const results = await updateProductPrices();
+    const results = await updateProductPrices(idFilter, nameFilter);
 
     const success = results.filter((r) => r.success).length;
     const failed  = results.filter((r) => !r.success).length;

@@ -250,9 +250,13 @@ export interface ScrapeResult {
  * Scrapes Shopee + Lazada concurrently per product, then saves to DB.
  */
 export async function updateProductPrices(
-  productId?: string
+  productId?: string,
+  nameFilter?: string   // partial case-insensitive name match, e.g. "iphone 17"
 ): Promise<ScrapeResult[]> {
-  const query = productId ? { _id: productId } : {};
+  const query: Record<string, any> = productId ? { _id: productId } : {};
+  if (nameFilter) {
+    query.name = { $regex: nameFilter, $options: "i" };
+  }
   const products = await Product.find(query);
   const report: ScrapeResult[] = [];
 

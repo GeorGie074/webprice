@@ -1,31 +1,22 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 /**
- * Lazily-created transporter (created only once, reused across calls).
- * Returns null when email config is missing — callers should log a warning
- * and continue without throwing.
+ * Lazily-created Resend client.
+ * Returns null when RESEND_API_KEY is not set.
  */
-let _transporter: nodemailer.Transporter | null = null;
+let _resend: Resend | null = null;
 
-function getTransporter(): nodemailer.Transporter | null {
-  if (_transporter) return _transporter;
+function getResend(): Resend | null {
+  if (_resend) return _resend;
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  _resend = new Resend(key);
+  return _resend;
+}
 
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    return null; // Email not configured — silent skip
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT ?? 587),
-    secure: Number(SMTP_PORT ?? 587) === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-    family: 4, // Force IPv4 — Railway resolves smtp.gmail.com to IPv6 (ENETUNREACH)
-  } as any);
-
-  return _transporter;
+/** FROM address — use a verified domain address, or fall back to Resend's test sender */
+function getFrom(): string {
+  return process.env.SMTP_FROM ?? "PriceCompare <onboarding@resend.dev>";
 }
 
 export interface PasswordResetMailOptions {
@@ -39,13 +30,13 @@ export interface PasswordResetMailOptions {
  * Returns true on success, false if email is not configured or sending fails.
  */
 export async function sendPasswordResetEmail(opts: PasswordResetMailOptions): Promise<boolean> {
-  const transporter = getTransporter();
-  if (!transporter) {
-    console.log(`[mailer] Email not configured — skipping reset email to ${opts.to}`);
+  const resend = getResend();
+  if (!resend) {
+    console.log(`[mailer] RESEND_API_KEY not set — skipping reset email to ${opts.to}`);
     return false;
   }
 
-  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@pricecompare.th";
+  const from = getFrom();
 
   const html = `
 <!DOCTYPE html>
@@ -116,12 +107,16 @@ export async function sendPasswordResetEmail(opts: PasswordResetMailOptions): Pr
 </html>`;
 
   try {
-    await transporter.sendMail({
-      from:    `"PriceCompare" <${from}>`,
+    const { error } = await resend.emails.send({
+      from,
       to:      opts.to,
       subject: "🔐 รีเซ็ตรหัสผ่าน PriceCompare",
       html,
     });
+    if (error) {
+      console.error(`[mailer] ❌ Failed reset email to ${opts.to}:`, error.message);
+      return false;
+    }
     console.log(`[mailer] ✅ Sent password reset email to ${opts.to}`);
     return true;
   } catch (err) {
@@ -145,13 +140,13 @@ export interface PriceAlertMailOptions {
  * Returns true on success, false if email is not configured or sending fails.
  */
 export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<boolean> {
-  const transporter = getTransporter();
-  if (!transporter) {
-    console.log(`[mailer] Email not configured — skipping alert to ${opts.to}`);
+  const resend = getResend();
+  if (!resend) {
+    console.log(`[mailer] RESEND_API_KEY not set — skipping alert to ${opts.to}`);
     return false;
   }
 
-  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@pricecompare.th";
+  const from = getFrom();
   const pctOff = opts.targetPrice > 0
     ? Math.round(((opts.targetPrice - opts.currentPrice) / opts.targetPrice) * 100)
     : 0;
@@ -273,12 +268,16 @@ export async function sendPriceAlertEmail(opts: PriceAlertMailOptions): Promise<
 `;
 
   try {
-    await transporter.sendMail({
-      from: `"PriceCompare" <${from}>`,
-      to: opts.to,
+    const { error } = await resend.emails.send({
+      from,
+      to:      opts.to,
       subject: `🎉 ${opts.productName} ราคาถึงเป้าหมาย ฿${opts.currentPrice.toLocaleString()} แล้ว!`,
       html,
     });
+    if (error) {
+      console.error(`[mailer] ❌ Failed to send to ${opts.to}:`, error.message);
+      return false;
+    }
     console.log(`[mailer] ✅ Sent price alert to ${opts.to} for "${opts.productName}"`);
     return true;
   } catch (err) {
