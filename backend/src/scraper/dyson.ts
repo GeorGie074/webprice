@@ -128,7 +128,7 @@ export async function scrapeDyson(keyword: string): Promise<ScrapedItem[]> {
           ? slug.startsWith("http") ? slug : `https://www.dyson.co.th${slug}`
           : targetUrl;
 
-        results.push({ name, price, url, inStock: true, rating: 0, reviews: 0 });
+        results.push({ name, price, url, inStock: null, rating: 0, reviews: 0 });
       }
     }
 
@@ -171,7 +171,7 @@ export async function scrapeDyson(keyword: string): Promise<ScrapedItem[]> {
             name:    item.name,
             price:   item.price,
             url:     item.url || targetUrl,
-            inStock: true,
+            inStock: null,
             rating:  0,
             reviews: 0,
           });

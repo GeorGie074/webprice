@@ -436,7 +436,7 @@ export default function SearchPage() {
         if (filters.minDiscount > 0 && discount < filters.minDiscount)            return false;
         if (filters.onlyFreeShipping  && (!best || best.shipping !== 0))          return false;
         if (filters.onlyOfficialStore && (!best || !OFFICIAL_STORES.has(best.platform))) return false;
-        if (filters.onlyInStock       && (!best || !best.inStock))                return false;
+        if (filters.onlyInStock       && (!best || best.inStock === false))        return false; // null = unknown → include
 
         return true;
       })

@@ -35,7 +35,7 @@ interface ScrapedCoupon {
   minSpend: number; afterPrice: number;
 }
 interface LiveResult {
-  name: string; price: number; url: string; inStock: boolean;
+  name: string; price: number; url: string; inStock: boolean | null;
   rating: number; reviews: number; image?: string; coupon?: ScrapedCoupon;
 }
 type PlatformStatus = "idle" | "loading" | "done" | "error";
@@ -152,9 +152,9 @@ function CompareRow({
 
               {/* Stock */}
               <span className={`text-[11px] font-semibold px-2 py-1 rounded-lg shrink-0 hidden sm:inline ${
-                best.inStock ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-400"
+                best.inStock === null ? "bg-gray-100 text-gray-400" : best.inStock ? "bg-green-50 text-green-700" : "bg-red-50 text-red-400"
               }`}>
-                {best.inStock ? "มีสินค้า" : "หมด"}
+                {best.inStock === null ? "ไม่ระบุ" : best.inStock ? "มีสินค้า" : "หมด"}
               </span>
 
               {/* CTA */}
@@ -199,9 +199,9 @@ function CompareRow({
               <p className="text-base font-bold text-gray-700">฿{price.toLocaleString()}</p>
             </div>
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg shrink-0 hidden sm:inline ${
-              item.inStock ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-400"
+              item.inStock === null ? "bg-gray-100 text-gray-400" : item.inStock ? "bg-green-50 text-green-700" : "bg-red-50 text-red-400"
             }`}>
-              {item.inStock ? "มีสินค้า" : "หมด"}
+              {item.inStock === null ? "ไม่ระบุ" : item.inStock ? "มีสินค้า" : "หมด"}
             </span>
             <a href={item.url} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-100 shrink-0">

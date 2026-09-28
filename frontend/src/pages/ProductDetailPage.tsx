@@ -413,7 +413,9 @@ export default function ProductDetailPage() {
                           ? <span className="text-emerald-500 font-medium">ฟรีส่ง</span>
                           : <span>ส่ง ฿{p.shipping}</span>}
                         <span className="text-gray-200">·</span>
-                        {p.inStock
+                        {p.inStock === null
+                          ? <span className="text-gray-400">ไม่ระบุ</span>
+                          : p.inStock
                           ? <span className="text-gray-500">มีสินค้า</span>
                           : <span className="text-red-400">หมด</span>}
                       </div>

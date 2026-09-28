@@ -123,7 +123,7 @@ export async function scrapePowerBuy(keyword: string): Promise<ScrapedItem[]> {
       const toPrice = (v: any) =>
         Math.round(parseFloat(String(v ?? "0").replace(/,/g, "")) || 0);
 
-      for (const item of capturedProducts.slice(0, 12)) {
+      for (const item of capturedProducts.slice(0, 50)) {
         const name  = item.name ?? "";
         // minPrice/maxPrice are strings like "49,700.00" — strip commas first
         const price = toPrice(item.minPrice) || toPrice(item.maxPrice) ||
@@ -176,7 +176,7 @@ export async function scrapePowerBuy(keyword: string): Promise<ScrapedItem[]> {
             name:    item.name,
             price:   item.price,
             url:     item.link || searchUrl,
-            inStock: true,
+            inStock: null,
             rating:  0,
             reviews: 0,
           });

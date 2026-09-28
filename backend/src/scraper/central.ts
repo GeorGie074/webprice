@@ -1,5 +1,6 @@
 import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
+import { normalizeUrl } from "./utils.js";
 
 /**
  * Scrape Central Online Thailand (central.co.th).
@@ -138,9 +139,7 @@ export async function scrapeCentral(keyword: string): Promise<ScrapedItem[]> {
         const imgRaw =
           item.image ?? item.thumbnail ?? item.imageUrl ??
           item.productImage ?? item.images?.[0] ?? "";
-        const image = imgRaw
-          ? (imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw)
-          : undefined;
+        const image = normalizeUrl(imgRaw) || undefined;
 
         results.push({
           name,
@@ -194,7 +193,7 @@ export async function scrapeCentral(keyword: string): Promise<ScrapedItem[]> {
             name:    item.name,
             price:   item.price,
             url:     item.url || searchUrl,
-            inStock: true,
+            inStock: null,
             rating:  0,
             reviews: 0,
             image,

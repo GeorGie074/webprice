@@ -156,7 +156,7 @@ async function fetchSonyDom(keyword: string): Promise<ScrapedItem[]> {
       for (const item of domItems) {
         if (item.name && item.price > 0)
           results.push({ name: item.name, price: item.price, url: item.url || searchUrl,
-                         inStock: true, rating: 0, reviews: 0 });
+                         inStock: null, rating: 0, reviews: 0 });
       }
 
       if (results.length === 0) {

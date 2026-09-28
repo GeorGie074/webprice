@@ -11,7 +11,7 @@ export interface PlatformPrice {
   price: number;
   originalPrice: number;
   url: string;
-  inStock: boolean;
+  inStock: boolean | null; // null = stock status unknown
   shipping: number;
   rating: number;
   reviews: number;

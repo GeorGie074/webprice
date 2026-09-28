@@ -99,7 +99,7 @@ async function fetchNikeApi(keyword: string): Promise<ScrapedItem[]> {
         name:    threadTitle.trim(),
         price,
         url:     `https://www.nike.com/th/search?q=${encodeURIComponent(keyword)}`,
-        inStock: true,
+        inStock: null,
         rating:  0,
         reviews: 0,
       });
@@ -183,7 +183,7 @@ async function fetchNikeDom(keyword: string): Promise<ScrapedItem[]> {
         results.push({
           name, price,
           url:     `https://www.nike.com/th/search?q=${encodeURIComponent(keyword)}`,
-          inStock: true,
+          inStock: null,
           rating:  0,
           reviews: 0,
         });
@@ -223,7 +223,7 @@ async function fetchNikeDom(keyword: string): Promise<ScrapedItem[]> {
       for (const item of domItems) {
         if (item.name && item.price > 0)
           results.push({ name: item.name, price: item.price, url: item.url || searchUrl,
-                         inStock: true, rating: 0, reviews: 0 });
+                         inStock: null, rating: 0, reviews: 0 });
       }
 
       if (results.length === 0) {

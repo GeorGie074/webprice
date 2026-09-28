@@ -47,7 +47,14 @@ export interface ScrapedItem {
   name:    string;
   price:   number;
   url:     string;
-  inStock: boolean;
+  /**
+   * true  = scraper confirmed in-stock
+   * false = scraper confirmed out-of-stock
+   * null  = scraper did not / cannot verify stock status
+   *
+   * Frontend should show "ไม่ระบุ" (gray) for null — never assume available.
+   */
+  inStock: boolean | null;
   rating:  number;
   reviews: number;
   /** Product image URL scraped from the listing (optional — filled in when available) */
@@ -191,7 +198,7 @@ export async function scrapeShopee(keyword: string): Promise<ScrapedItem[]> {
           results.push({
             name: item.name, price: item.price,
             url: item.link || searchUrl,
-            inStock: true, rating: 0, reviews: 0,
+            inStock: null, rating: 0, reviews: 0,
           });
         }
       }

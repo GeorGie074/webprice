@@ -208,7 +208,7 @@ async function fetchAppleDom(keyword: string): Promise<ScrapedItem[]> {
             name:    item.name,
             price:   item.price,
             url:     item.url || searchUrl,
-            inStock: true,
+            inStock: null,
             rating:  0,
             reviews: 0,
           });

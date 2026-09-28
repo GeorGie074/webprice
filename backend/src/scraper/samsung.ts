@@ -1,5 +1,6 @@
 import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
+import { normalizeUrl } from "./utils.js";
 
 /**
  * Scrape Samsung Shop Thailand (samsung.com/th).
@@ -100,11 +101,9 @@ export async function scrapeSamsung(keyword: string): Promise<ScrapedItem[]> {
         const imgRaw =
           item.thumbnail ?? item.imageUrl ?? item.image ??
           item.mainImage ?? item.thumbnailUrl ?? "";
-        const image = imgRaw
-          ? (imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw)
-          : undefined;
+        const image = normalizeUrl(imgRaw) || undefined;
 
-        results.push({ name, price, url, inStock: true, rating: 0, reviews: 0, image });
+        results.push({ name, price, url, inStock: null, rating: 0, reviews: 0, image });
       }
     }
 
@@ -154,7 +153,7 @@ export async function scrapeSamsung(keyword: string): Promise<ScrapedItem[]> {
             name:    item.name,
             price:   item.price,
             url:     item.url || searchUrl,
-            inStock: true,
+            inStock: null,
             rating:  0,
             reviews: 0,
             image,

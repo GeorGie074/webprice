@@ -316,10 +316,12 @@ export default function ComparePage() {
             const best = getBestPrice(p);
             return (
               <Cell key={p._id}>
-                {best?.inStock ? (
+                {best?.inStock === true ? (
                   <Check size={16} className="text-green-500 mx-auto" />
-                ) : (
+                ) : best?.inStock === false ? (
                   <X size={16} className="text-red-400 mx-auto" />
+                ) : (
+                  <span className="text-gray-300 text-xs mx-auto block text-center">—</span>
                 )}
               </Cell>
             );

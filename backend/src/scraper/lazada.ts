@@ -1,6 +1,7 @@
 import { load } from "cheerio";
 import { createContext, closeBrowser } from "./browser.js";
 import type { ScrapedItem } from "./shopee.js";
+import { normalizeUrl } from "./utils.js";
 
 /**
  * Scrape Lazada Thailand.
@@ -45,14 +46,12 @@ function extractFromScript(html: string): ScrapedItem[] | null {
         const price = Math.round(parseFloat(String(rawPrice).replace(/[^0-9.]/g, "")));
         if (!price) continue;
         const imgRaw = item.image ?? item.img ?? item.thumbnail ?? "";
-        const image = imgRaw
-          ? imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw
-          : undefined;
+        const image = normalizeUrl(imgRaw) || undefined;
         results.push({
           name: item.name ?? "",
           price,
-          url: item.itemUrl ? `https:${item.itemUrl}` : "",
-          inStock: true,
+          url: normalizeUrl(item.itemUrl),
+          inStock: null,   // Lazada listing pages don't expose stock status
           rating: parseFloat(item.ratingScore ?? "0"),
           reviews: parseInt(item.review ?? "0"),
           image,
@@ -125,8 +124,8 @@ function extractFromDom(html: string, searchUrl: string): ScrapedItem[] {
       results.push({
         name,
         price,
-        url: href.startsWith("http") ? href : `https:${href}`,
-        inStock: true,
+        url: normalizeUrl(href),
+        inStock: null,
         rating: 0,
         reviews: 0,
       });
@@ -151,8 +150,8 @@ function extractFromDom(html: string, searchUrl: string): ScrapedItem[] {
     results.push({
       name,
       price,
-      url: link ? (link.startsWith("http") ? link : `https:${link}`) : searchUrl,
-      inStock: true,
+      url: normalizeUrl(link, searchUrl),
+      inStock: null,
       rating: 0,
       reviews: 0,
       image: img.startsWith("http") ? img : undefined,
@@ -216,14 +215,12 @@ async function scrapeLazadaViaPlaywright(keyword: string): Promise<ScrapedItem[]
             );
             if (!price) continue;
             const imgRaw = item.image ?? item.img ?? item.thumbnail ?? "";
-            const image = imgRaw
-              ? imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw
-              : undefined;
+            const image = normalizeUrl(imgRaw) || undefined;
             results.push({
               name: item.name ?? "",
               price,
-              url: item.itemUrl ? `https:${item.itemUrl}` : searchUrl,
-              inStock: true,
+              url: normalizeUrl(item.itemUrl, searchUrl),
+              inStock: null,
               rating: parseFloat(item.ratingScore ?? "0"),
               reviews: parseInt(item.review ?? "0"),
               image,
@@ -271,7 +268,7 @@ async function scrapeLazadaViaPlaywright(keyword: string): Promise<ScrapedItem[]
             name: item.name,
             price,
             url: item.link || searchUrl,
-            inStock: true,
+            inStock: null,
             rating: 0,
             reviews: 0,
             image,

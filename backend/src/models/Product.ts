@@ -25,7 +25,7 @@ export interface IPlatformPrice {
   price: number;
   originalPrice: number;
   url: string;
-  inStock: boolean;
+  inStock: boolean | null; // null = stock status unknown
   shipping: number;
   rating: number;
   reviews: number;
@@ -99,7 +99,7 @@ const platformPriceSchema = new mongoose.Schema<IPlatformPrice>({
   price:         { type: Number,  required: true },
   originalPrice: { type: Number,  required: true },
   url:           { type: String,  required: true },
-  inStock:       { type: Boolean, default: true  },
+  inStock:       { type: Boolean, default: null  }, // null = unknown
   shipping:      { type: Number,  default: 0     },
   rating:        { type: Number,  default: 0     },
   reviews:       { type: Number,  default: 0     },
