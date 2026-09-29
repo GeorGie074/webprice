@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+﻿import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
 
 /**
@@ -85,7 +85,7 @@ async function fetchAppleApi(keyword: string): Promise<ScrapedItem[]> {
 // ── Approach 2: Playwright on apple.com/th/search ─────────────────────────────
 async function fetchAppleDom(keyword: string): Promise<ScrapedItem[]> {
   const browser = await chromium.launch({
-    headless: false,
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -233,6 +233,12 @@ async function fetchAppleDom(keyword: string): Promise<ScrapedItem[]> {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function scrapeApple(keyword: string): Promise<ScrapedItem[]> {
+  // Brand guard: Apple Store only carries Apple ecosystem products.
+  if (!/iphone|ipad|macbook|mac\s*(mini|pro|air|studio)|imac|airpod|apple\s*watch|apple\s*pencil|apple\s*tv/i.test(keyword)) {
+    console.log(`[Apple] Skipping "${keyword}" — not an Apple product`);
+    return [];
+  }
+
   // Fast path: Apple Shop search API
   const apiResults = await fetchAppleApi(keyword).catch((e) => {
     console.warn(`[Apple] API fetch failed ("${keyword}"):`, e.message);
@@ -244,8 +250,11 @@ export async function scrapeApple(keyword: string): Promise<ScrapedItem[]> {
     return apiResults;
   }
 
-  // Slow path: Playwright DOM
-  const domResults = await fetchAppleDom(keyword);
+  // Slow path: Playwright DOM — catch browser launch / nav errors gracefully
+  const domResults = await fetchAppleDom(keyword).catch((err) => {
+    console.error(`[Apple] DOM fallback failed ("${keyword}"):`, (err as Error).message);
+    return [] as ScrapedItem[];
+  });
   console.log(`[Apple] "${keyword}" → ${domResults.length} results (DOM)`);
   return domResults;
 }

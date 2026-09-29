@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+﻿import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
 import { normalizeUrl } from "./utils.js";
 
@@ -13,9 +13,14 @@ import { normalizeUrl } from "./utils.js";
  *
  * Products carried: electronics, fashion, home goods, beauty, sports (general dept. store).
  */
-export async function scrapeCentral(keyword: string): Promise<ScrapedItem[]> {
+export interface CentralScrapeResult {
+  items: ScrapedItem[];
+  confirmed: boolean; // true = Central page loaded OK; 0 items = genuinely not sold there
+}
+
+export async function scrapeCentral(keyword: string): Promise<CentralScrapeResult> {
   const browser = await chromium.launch({
-    headless: false,
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -207,14 +212,31 @@ export async function scrapeCentral(keyword: string): Promise<ScrapedItem[]> {
       }
     }
 
+    // ── Page validity check ──────────────────────────────────────────────────
+    // If still on central.co.th AND __NEXT_DATA__ is accessible (even if
+    // product list is empty), the page loaded legitimately → confirmed = true.
+    const finalUrl    = page.url();
+    const hasNextData = await page.evaluate(() => {
+      try { return !!(window as any).__NEXT_DATA__; } catch { return false; }
+    }).catch(() => false);
+
+    const confirmed = finalUrl.includes("central.co.th") && hasNextData;
+    if (!confirmed) {
+      console.warn(
+        `[Central] Page validity check failed — ` +
+        `url="${finalUrl.slice(0, 80)}" hasNextData=${hasNextData}`
+      );
+    }
+
+    console.log(`[Central] "${keyword}" → ${results.length} results (confirmed=${confirmed})`);
+    return { items: results, confirmed };
+
   } catch (err) {
     console.error(`[Central] Error "${keyword}":`, (err as Error).message);
+    return { items: results, confirmed: false };
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
     console.log("[Central] Browser closed");
   }
-
-  console.log(`[Central] "${keyword}" → ${results.length} results`);
-  return results;
 }

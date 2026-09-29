@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+﻿import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
 
 /**
@@ -42,31 +42,39 @@ function categoryUrl(keyword: string): string {
 }
 
 export async function scrapeDyson(keyword: string): Promise<ScrapedItem[]> {
-  const browser = await chromium.launch({
-    headless: false,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--window-size=1366,768",
-      "--window-position=-8000,-8000",
-    ],
-    ignoreDefaultArgs: ["--enable-automation"],
-  });
+  // Brand guard: Dyson Store only carries Dyson products.
+  if (!/dyson/i.test(keyword)) {
+    console.log(`[Dyson] Skipping "${keyword}" — not a Dyson product`);
+    return [];
+  }
 
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale: "en-US",          // Dyson TH serves English product names on en locale
-    timezoneId: "Asia/Bangkok",
-    viewport: { width: 1366, height: 768 },
-  });
-
-  const page    = await context.newPage();
+  let browser: import("playwright").Browser | undefined;
+  let context: import("playwright").BrowserContext | undefined;
   const results: ScrapedItem[] = [];
 
   try {
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1366,768",
+        "--window-position=-8000,-8000",
+      ],
+      ignoreDefaultArgs: ["--enable-automation"],
+    });
+
+    context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      locale: "en-US",          // Dyson TH serves English product names on en locale
+      timezoneId: "Asia/Bangkok",
+      viewport: { width: 1366, height: 768 },
+    });
+
+    const page = await context.newPage();
     const targetUrl = categoryUrl(keyword);
     let capturedItems: any[] = [];
 
@@ -186,8 +194,8 @@ export async function scrapeDyson(keyword: string): Promise<ScrapedItem[]> {
   } catch (err) {
     console.error(`[Dyson] Error "${keyword}":`, (err as Error).message);
   } finally {
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
     console.log("[Dyson] Browser closed");
   }
 

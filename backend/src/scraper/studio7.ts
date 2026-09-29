@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+﻿import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
 
 /**
@@ -58,32 +58,40 @@ function categoryUrl(keyword: string): string {
   return "https://www.studio7thailand.com/en";  // generic fallback
 }
 export async function scrapeStudio7(keyword: string): Promise<ScrapedItem[]> {
-  const browser = await chromium.launch({
-    headless: false,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--window-size=1366,768",
-      "--window-position=-8000,-8000",
-      "--lang=th-TH",
-    ],
-    ignoreDefaultArgs: ["--enable-automation"],
-  });
+  // Brand guard: Studio 7 is an Apple Authorized Reseller — only Apple ecosystem products.
+  if (!/iphone|ipad|macbook|mac\s*(mini|pro|air|studio)|imac|airpod|apple\s*watch|apple\s*pencil|apple\s*tv/i.test(keyword)) {
+    console.log(`[Studio7] Skipping "${keyword}" — not an Apple product`);
+    return [];
+  }
 
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale: "th-TH",
-    timezoneId: "Asia/Bangkok",
-    viewport: { width: 1366, height: 768 },
-  });
-
-  const page    = await context.newPage();
+  let browser: import("playwright").Browser | undefined;
+  let context: import("playwright").BrowserContext | undefined;
   const results: ScrapedItem[] = [];
 
   try {
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1366,768",
+        "--window-position=-8000,-8000",
+        "--lang=th-TH",
+      ],
+      ignoreDefaultArgs: ["--enable-automation"],
+    });
+
+    context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      locale: "th-TH",
+      timezoneId: "Asia/Bangkok",
+      viewport: { width: 1366, height: 768 },
+    });
+
+    const page    = await context.newPage();
     const searchUrl = `https://www.studio7thailand.com/th/search?q=${encodeURIComponent(keyword)}`;
 
     // ── Intercept product-groups API ─────────────────────────────────────────
@@ -161,8 +169,8 @@ export async function scrapeStudio7(keyword: string): Promise<ScrapedItem[]> {
   } catch (err) {
     console.error(`[Studio7] Error "${keyword}":`, (err as Error).message);
   } finally {
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
     console.log("[Studio7] Browser closed");
   }
 

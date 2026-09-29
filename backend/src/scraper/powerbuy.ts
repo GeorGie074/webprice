@@ -1,4 +1,4 @@
-import { chromium } from "playwright-extra";
+﻿import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import type { ScrapedItem } from "./shopee.js";
 
@@ -21,9 +21,14 @@ chromium.use(StealthPlugin());
  * Product URL:      https://www.powerbuy.co.th/th/product/{slugname}
  *                   (prCode is already embedded inside the slug — do NOT append it again)
  */
-export async function scrapePowerBuy(keyword: string): Promise<ScrapedItem[]> {
+export interface PowerBuyScrapeResult {
+  items: ScrapedItem[];
+  confirmed: boolean; // true = Power Buy page loaded OK; 0 items = genuinely not sold there
+}
+
+export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeResult> {
   const browser = await chromium.launch({
-    headless: false,
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -189,14 +194,35 @@ export async function scrapePowerBuy(keyword: string): Promise<ScrapedItem[]> {
       }
     }
 
+    // ── Page validity check ─────────────────────────────────────────────────
+    // If we're still on powerbuy.co.th AND __NEXT_DATA__ is present (even if
+    // product list is empty), the page loaded legitimately → confirmed = true.
+    // A Cloudflare challenge page would redirect us off-domain or omit __NEXT_DATA__.
+    const finalUrl    = page.url();
+    const hasNextData = await page.evaluate(() => {
+      try { return !!(window as any).__NEXT_DATA__; } catch { return false; }
+    }).catch(() => false);
+
+    const confirmed = finalUrl.includes("powerbuy.co.th") && hasNextData;
+    if (!confirmed) {
+      console.warn(
+        `[PowerBuy] Page validity check failed — ` +
+        `url="${finalUrl.slice(0, 80)}" hasNextData=${hasNextData}`
+      );
+    }
+
+    if (results.length === 0 && confirmed) {
+      console.log(`[PowerBuy] Confirmed page loaded but no results for "${keyword}"`);
+    }
+
+    return { items: results, confirmed };
+
   } catch (err) {
     console.error(`[PowerBuy] Error "${keyword}":`, (err as Error).message);
+    return { items: results, confirmed: false };
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
     console.log("[PowerBuy] Browser closed");
   }
-
-  console.log(`[PowerBuy] "${keyword}" → ${results.length} results`);
-  return results;
 }

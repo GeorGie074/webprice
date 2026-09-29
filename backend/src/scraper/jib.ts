@@ -19,7 +19,40 @@ import type { ScrapedItem } from "./shopee.js";
  *   Price:  p.price_total  (inside .row.boxprice → .col-md-6.text-right)
  *   Image:  img.imgpspecial
  *   Stock:  absence of "สินค้าหมด" in card text
+ *
+ * Return value: { items, confirmed }
+ *   confirmed = true  → a valid JIB search-results page was loaded and parsed;
+ *                        0 items means JIB genuinely doesn't carry the product.
+ *   confirmed = false → scraper was blocked / page load failed / uncertain result;
+ *                        caller should preserve existing seeded price.
  */
+
+export interface JIBScrapeResult {
+  items: ScrapedItem[];
+  confirmed: boolean;
+}
+
+// ─── Page validity check ──────────────────────────────────────────────────────
+//
+// Returns true when the HTML is from a genuine JIB search-results page.
+// Cloudflare challenge pages, gateway errors, and empty stubs fail these checks.
+//
+// Markers used (all JIB-specific, absent from challenge/error pages):
+//   • html.length > 10 KB      — real JIB pages are always substantial
+//   • "jib.co.th"              — canonical domain appears in header/footer links
+//   • "product_search"         — search endpoint path embedded in pagination/forms
+//   • "divboxpro"              — product card CSS class (present even with items)
+//   • "ไม่พบสินค้า"            — "product not found" message on genuine 0-results page
+//
+function isValidJibPage(html: string): boolean {
+  if (html.length < 10_000) return false;
+  return (
+    html.includes("jib.co.th")      ||
+    html.includes("product_search") ||
+    html.includes("divboxpro")      ||
+    html.includes("ไม่พบสินค้า")
+  );
+}
 
 // ─── Shared parse helper ──────────────────────────────────────────────────────
 
@@ -42,7 +75,7 @@ function resolveUrl(href: string, fallback: string): string {
 async function scrapeJIBViaScraperAPI(
   keyword: string,
   apiKey: string
-): Promise<ScrapedItem[]> {
+): Promise<JIBScrapeResult> {
   const jibUrl = `https://www.jib.co.th/web/product/product_search/0?str_search=${encodeURIComponent(keyword)}&cate_id[]=`;
   // render=true: tells ScraperAPI to execute JS before returning HTML
   const scraperUrl =
@@ -56,7 +89,12 @@ async function scrapeJIBViaScraperAPI(
   if (!res.ok) throw new Error(`ScraperAPI HTTP ${res.status}`);
   const html = await res.text();
 
-  return parseJIBHtml(html, jibUrl);
+  const confirmed = isValidJibPage(html);
+  const items = parseJIBHtml(html, jibUrl);
+  if (!confirmed) {
+    console.warn(`[JIB] ScraperAPI: page validity check failed (blocked/challenge?), html.length=${html.length}`);
+  }
+  return { items, confirmed };
 }
 
 function parseJIBHtml(html: string, fallbackUrl: string): ScrapedItem[] {
@@ -98,7 +136,7 @@ function parseJIBHtml(html: string, fallbackUrl: string): ScrapedItem[] {
 
 // ─── Path B: Playwright (local dev) ───────────────────────────────────────────
 
-async function scrapeJIBViaPlaywright(keyword: string): Promise<ScrapedItem[]> {
+async function scrapeJIBViaPlaywright(keyword: string): Promise<JIBScrapeResult> {
   const context = await createContext(false);
   const page = await context.newPage();
   const searchUrl = `https://www.jib.co.th/web/product/product_search/0?str_search=${encodeURIComponent(keyword)}&cate_id[]=`;
@@ -111,6 +149,19 @@ async function scrapeJIBViaPlaywright(keyword: string): Promise<ScrapedItem[]> {
         page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 35_000 })
       );
     await page.waitForTimeout(1_500);
+
+    // ── Confirm page validity ──────────────────────────────────────────────────
+    // Check that Playwright actually landed on a real JIB page (not a CAPTCHA/block).
+    // We use the final URL (must still be jib.co.th) and the page title.
+    const finalUrl   = page.url();
+    const pageTitle  = await page.title().catch(() => "");
+    const confirmed  =
+      finalUrl.includes("jib.co.th") &&
+      (pageTitle.toLowerCase().includes("jib") || finalUrl.includes("product_search"));
+
+    if (!confirmed) {
+      console.warn(`[JIB] Playwright: page validity check failed. URL="${finalUrl.slice(0, 80)}" title="${pageTitle.slice(0, 60)}"`);
+    }
 
     const items = await page
       .evaluate(() => {
@@ -161,14 +212,13 @@ async function scrapeJIBViaPlaywright(keyword: string): Promise<ScrapedItem[]> {
     }
 
     if (results.length === 0) {
-      const title = await page.title().catch(() => "?");
-      console.log(`[JIB] No results — page title: "${title.slice(0, 60)}"`);
+      console.log(`[JIB] No results — confirmed=${confirmed} title="${pageTitle.slice(0, 60)}"`);
     }
-    return results;
+    return { items: results, confirmed };
 
   } catch (err) {
     console.error(`[JIB] Playwright error "${keyword}":`, (err as Error).message);
-    return [];
+    return { items: [], confirmed: false };
   } finally {
     await context.close().catch(() => {});
   }
@@ -176,14 +226,16 @@ async function scrapeJIBViaPlaywright(keyword: string): Promise<ScrapedItem[]> {
 
 // ─── Entry point ───────────────────────────────────────────────────────────────
 
-export async function scrapeJIB(keyword: string): Promise<ScrapedItem[]> {
+export async function scrapeJIB(keyword: string): Promise<JIBScrapeResult> {
   const apiKey = process.env.SCRAPERAPI_KEY;
 
   if (apiKey) {
     try {
-      const results = await scrapeJIBViaScraperAPI(keyword, apiKey);
-      console.log(`[JIB] "${keyword}" → ${results.length} results (ScraperAPI)`);
-      return results;
+      const result = await scrapeJIBViaScraperAPI(keyword, apiKey);
+      console.log(
+        `[JIB] "${keyword}" → ${result.items.length} results (ScraperAPI, confirmed=${result.confirmed})`
+      );
+      return result;
     } catch (err) {
       console.error(
         `[JIB] ScraperAPI failed: ${(err as Error).message} — falling back to Playwright`
@@ -191,7 +243,9 @@ export async function scrapeJIB(keyword: string): Promise<ScrapedItem[]> {
     }
   }
 
-  const results = await scrapeJIBViaPlaywright(keyword);
-  console.log(`[JIB] "${keyword}" → ${results.length} results (Playwright)`);
-  return results;
+  const result = await scrapeJIBViaPlaywright(keyword);
+  console.log(
+    `[JIB] "${keyword}" → ${result.items.length} results (Playwright, confirmed=${result.confirmed})`
+  );
+  return result;
 }

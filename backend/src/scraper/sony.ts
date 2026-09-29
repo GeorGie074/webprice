@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+﻿import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
 
 /**
@@ -57,7 +57,7 @@ async function fetchSonyApi(keyword: string): Promise<ScrapedItem[]> {
 // ── Approach 2: Playwright DOM fallback ───────────────────────────────────────
 async function fetchSonyDom(keyword: string): Promise<ScrapedItem[]> {
   const browser = await chromium.launch({
-    headless: false,
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -178,6 +178,12 @@ async function fetchSonyDom(keyword: string): Promise<ScrapedItem[]> {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function scrapeSony(keyword: string): Promise<ScrapedItem[]> {
+  // Brand guard: Sony Store only carries Sony products.
+  if (!/sony|xperia|wh-|wf-|linkbuds|bravia|alpha|zv-|playstation/i.test(keyword)) {
+    console.log(`[Sony] Skipping "${keyword}" — not a Sony product`);
+    return [];
+  }
+
   // Fast path: Shopify JSON API (no browser)
   const apiResults = await fetchSonyApi(keyword).catch((e) => {
     console.warn(`[Sony] API fetch failed ("${keyword}"):`, e.message);
@@ -189,8 +195,11 @@ export async function scrapeSony(keyword: string): Promise<ScrapedItem[]> {
     return apiResults;
   }
 
-  // Slow path: Playwright DOM
-  const domResults = await fetchSonyDom(keyword);
+  // Slow path: Playwright DOM — catch browser launch / nav errors gracefully
+  const domResults = await fetchSonyDom(keyword).catch((err) => {
+    console.error(`[Sony] DOM fallback failed ("${keyword}"):`, (err as Error).message);
+    return [] as ScrapedItem[];
+  });
   console.log(`[Sony] "${keyword}" → ${domResults.length} results (DOM)`);
   return domResults;
 }

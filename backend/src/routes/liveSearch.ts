@@ -5,15 +5,22 @@ import type { ScrapedItem } from "../scraper/shopee.js";
 import { scrapeLazada }   from "../scraper/lazada.js";
 import { scrapeBNN }      from "../scraper/bnn.js";
 import { scrapePowerBuy } from "../scraper/powerbuy.js";
+// scrapePowerBuy now returns { items, confirmed } — unwrap to ScrapedItem[] for the generic registry
+const scrapePowerBuyItems = (keyword: string) => scrapePowerBuy(keyword).then((r) => r.items);
 import { scrapeStudio7 }  from "../scraper/studio7.js";
 import { scrapeJIB }      from "../scraper/jib.js";
 import { scrapeSamsung }  from "../scraper/samsung.js";
 import { scrapeSony }     from "../scraper/sony.js";
 import { scrapeDyson }    from "../scraper/dyson.js";
 import { scrapeCentral }  from "../scraper/central.js";
+// scrapeCentral now returns { items, confirmed } — unwrap to ScrapedItem[] for the generic registry
+const scrapeCentralItems = (keyword: string) => scrapeCentral(keyword).then((r) => r.items);
 import { scrapeNike }     from "../scraper/nike.js";
 import { scrapeApple }    from "../scraper/apple.js";
 import { scrapeWatsons }  from "../scraper/watsons.js";
+
+// scrapeJIB now returns { items, confirmed } — unwrap to ScrapedItem[] for the generic registry
+const scrapeJIBItems = (keyword: string) => scrapeJIB(keyword).then((r) => r.items);
 
 const router = express.Router();
 
@@ -24,13 +31,13 @@ type ScraperFn = (keyword: string) => Promise<ScrapedItem[]>;
 const SCRAPERS: Record<string, ScraperFn> = {
   lazada:   scrapeLazada,
   bnn:      scrapeBNN,
-  powerbuy: scrapePowerBuy,
+  powerbuy: scrapePowerBuyItems,
   studio7:  scrapeStudio7,
-  jib:      scrapeJIB,
+  jib:      scrapeJIBItems,
   samsung:  scrapeSamsung,
   sony:     scrapeSony,
   dyson:    scrapeDyson,
-  central:  scrapeCentral,
+  central:  scrapeCentralItems,
   nike:     scrapeNike,
   apple:    scrapeApple,
   watsons:  scrapeWatsons,

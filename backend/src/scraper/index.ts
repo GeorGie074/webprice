@@ -4,13 +4,13 @@ import User from "../models/User.js";
 import { scrapeShopee, ScrapedItem } from "./shopee.js";
 import { scrapeLazada } from "./lazada.js";
 import { scrapeBNN } from "./bnn.js";
-import { scrapePowerBuy } from "./powerbuy.js";
+import { scrapePowerBuy, type PowerBuyScrapeResult } from "./powerbuy.js";
 import { scrapeStudio7 } from "./studio7.js";
-import { scrapeJIB } from "./jib.js";
+import { scrapeJIB, type JIBScrapeResult } from "./jib.js";
 import { scrapeSamsung } from "./samsung.js";
 import { scrapeSony } from "./sony.js";
 import { scrapeDyson } from "./dyson.js";
-import { scrapeCentral } from "./central.js";
+import { scrapeCentral, type CentralScrapeResult } from "./central.js";
 import { scrapeNike } from "./nike.js";
 import { scrapeApple } from "./apple.js";
 import { scrapeWatsons } from "./watsons.js";
@@ -338,12 +338,15 @@ export async function updateProductPrices(
       // ── Power Buy ────────────────────────────────────────────────────────
       // Uses its own playwright-extra + StealthPlugin browser (Cloudflare bypass).
       // Skip if product has no Power Buy entry — saves ~25s browser launch per product.
+      // scrapePowerBuy now returns { items, confirmed } — same logic as JIB.
       const hasPowerBuyEntry = product.prices.some(
         (p) => (p as any).platform === "Power Buy"
       );
-      const powerBuyItems = hasPowerBuyEntry
-        ? await scrapePowerBuy(shortEnglish).catch(() => [])
-        : (console.log(`[PowerBuy] Skipping "${product.name}" — no Power Buy entry`), []);
+      const _powerBuyResult: PowerBuyScrapeResult = hasPowerBuyEntry
+        ? await scrapePowerBuy(shortEnglish).catch(() => ({ items: [], confirmed: false }))
+        : (console.log(`[PowerBuy] Skipping "${product.name}" — no Power Buy entry`), { items: [], confirmed: false });
+      const powerBuyItems     = _powerBuyResult.items;
+      const powerBuyConfirmed = _powerBuyResult.confirmed;
 
       // ── Studio 7 ─────────────────────────────────────────────────────────
       // Apple Authorized Reseller — carries Apple products only.
@@ -358,12 +361,17 @@ export async function updateProductPrices(
       // ── JIB ──────────────────────────────────────────────────────────────
       // JIB Computer — carries IT/electronics products (phones, laptops, headphones…).
       // Skip if product has no JIB entry.
+      // scrapeJIB now returns { items, confirmed } so we can distinguish:
+      //   confirmed=true  → valid JIB page loaded; 0 items = product genuinely not on JIB
+      //   confirmed=false → scraper blocked / error; preserve seeded price
       const hasJIBEntry = product.prices.some(
         (p) => (p as any).platform === "JIB"
       );
-      const jibItems = hasJIBEntry
-        ? await scrapeJIB(shortEnglish).catch(() => [])
-        : (console.log(`[JIB] Skipping "${product.name}" — no JIB entry`), []);
+      const _jibResult: JIBScrapeResult = hasJIBEntry
+        ? await scrapeJIB(shortEnglish).catch(() => ({ items: [], confirmed: false }))
+        : (console.log(`[JIB] Skipping "${product.name}" — no JIB entry`), { items: [], confirmed: false });
+      const jibItems     = _jibResult.items;
+      const jibConfirmed = _jibResult.confirmed;
 
       // ── Samsung Shop ─────────────────────────────────────────────────────
       // samsung.com/th — Samsung branded products only.
@@ -394,12 +402,15 @@ export async function updateProductPrices(
 
       // ── Central Online ───────────────────────────────────────────────────
       // central.co.th — general department store (electronics, fashion, home).
+      // scrapeCentral now returns { items, confirmed } — same logic as JIB/Power Buy.
       const hasCentralEntry = product.prices.some(
         (p) => (p as any).platform === "Central Online"
       );
-      const centralItems = hasCentralEntry
-        ? await scrapeCentral(shortEnglish).catch(() => [])
-        : (console.log(`[Central] Skipping "${product.name}" — no Central Online entry`), []);
+      const _centralResult: CentralScrapeResult = hasCentralEntry
+        ? await scrapeCentral(shortEnglish).catch(() => ({ items: [], confirmed: false }))
+        : (console.log(`[Central] Skipping "${product.name}" — no Central Online entry`), { items: [], confirmed: false });
+      const centralItems     = _centralResult.items;
+      const centralConfirmed = _centralResult.confirmed;
 
       // ── Nike.com ─────────────────────────────────────────────────────────
       // nike.com/th — Nike shoes and sportswear.
@@ -612,7 +623,11 @@ export async function updateProductPrices(
             return { ...base, price: powerBuyFinal.price, url: powerBuyFinal.url,
                      inStock: powerBuyFinal.inStock, available: true };
           }
-          if (hasPowerBuyEntry) return base; // preserve seeded price when scraper finds no match
+          if (hasPowerBuyEntry && powerBuyConfirmed) {
+            console.log(`[PowerBuy] "${product.name}" confirmed not listed on Power Buy → available: false`);
+            return { ...base, available: false };
+          }
+          if (hasPowerBuyEntry) return base;
           return base;
         }
 
@@ -634,7 +649,15 @@ export async function updateProductPrices(
             return { ...base, price: jibFinal.price, url: jibFinal.url,
                      inStock: jibFinal.inStock, available: true };
           }
-          if (hasJIBEntry) return base; // preserve seeded price when scraper finds no match
+          // confirmed=true: JIB page loaded fine but product not found → mark unavailable.
+          // This removes seeded placeholder prices (e.g. vivo/OnePlus that JIB doesn't carry)
+          // so users are never shown a "buy on JIB" link that leads nowhere.
+          if (hasJIBEntry && jibConfirmed) {
+            console.log(`[JIB] "${product.name}" confirmed not listed on JIB → available: false`);
+            return { ...base, available: false };
+          }
+          // confirmed=false (blocked/error): preserve seeded price so it stays visible.
+          if (hasJIBEntry) return base;
           return base;
         }
 
@@ -678,7 +701,11 @@ export async function updateProductPrices(
             return { ...base, price: centralFinal.price, url: centralFinal.url,
                      inStock: centralFinal.inStock, available: true };
           }
-          if (hasCentralEntry) return base; // preserve seeded price when scraper finds no match
+          if (hasCentralEntry && centralConfirmed) {
+            console.log(`[Central] "${product.name}" confirmed not listed on Central → available: false`);
+            return { ...base, available: false };
+          }
+          if (hasCentralEntry) return base;
           return base;
         }
 

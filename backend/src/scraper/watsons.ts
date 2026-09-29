@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+﻿import { chromium } from "playwright";
 import type { ScrapedItem, ScrapedCoupon } from "./shopee.js";
 
 /**
@@ -19,38 +19,47 @@ import type { ScrapedItem, ScrapedCoupon } from "./shopee.js";
  *                   personal care, baby care, household.
  */
 export async function scrapeWatsons(keyword: string): Promise<ScrapedItem[]> {
-  const browser = await chromium.launch({
-    headless: false,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--window-size=1366,768",
-      "--window-position=-8000,-8000",
-      "--lang=th-TH",
-    ],
-    ignoreDefaultArgs: ["--enable-automation"],
-  });
+  // Brand guard: Watsons carries personal care, beauty, health products — not electronics.
+  // Skip clearly tech/electronics keywords to avoid wasting a browser launch.
+  if (/iphone|samsung|galaxy|macbook|laptop|playstation|xbox|nintendo|dyson|airpod|bravia|xperia|earphone|headphone|smart\s*watch|apple\s*watch/i.test(keyword)) {
+    console.log(`[Watsons] Skipping "${keyword}" — electronics keyword, not a Watsons product`);
+    return [];
+  }
 
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale: "th-TH",
-    timezoneId: "Asia/Bangkok",
-    viewport: { width: 1366, height: 768 },
-    extraHTTPHeaders: {
-      "accept-language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7",
-      "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"Windows"',
-    },
-  });
-
-  const page    = await context.newPage();
+  let browser: import("playwright").Browser | undefined;
+  let context: import("playwright").BrowserContext | undefined;
   const results: ScrapedItem[] = [];
 
   try {
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1366,768",
+        "--window-position=-8000,-8000",
+        "--lang=th-TH",
+      ],
+      ignoreDefaultArgs: ["--enable-automation"],
+    });
+
+    context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      locale: "th-TH",
+      timezoneId: "Asia/Bangkok",
+      viewport: { width: 1366, height: 768 },
+      extraHTTPHeaders: {
+        "accept-language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7",
+        "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+      },
+    });
+
+    const page    = await context.newPage();
     // ── 1. Homepage warm-up ─────────────────────────────────────────────────
     console.log("[Watsons] Visiting homepage...");
     await page.goto("https://www.watsons.co.th/", {
@@ -293,8 +302,8 @@ export async function scrapeWatsons(keyword: string): Promise<ScrapedItem[]> {
   } catch (err) {
     console.error(`[Watsons] Error "${keyword}":`, (err as Error).message);
   } finally {
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
     console.log("[Watsons] Browser closed");
   }
 

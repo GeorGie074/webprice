@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+﻿import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
 
 /**
@@ -113,7 +113,7 @@ async function fetchNikeApi(keyword: string): Promise<ScrapedItem[]> {
 // ── Approach 2: Playwright DOM fallback ───────────────────────────────────────
 async function fetchNikeDom(keyword: string): Promise<ScrapedItem[]> {
   const browser = await chromium.launch({
-    headless: false,
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -245,6 +245,12 @@ async function fetchNikeDom(keyword: string): Promise<ScrapedItem[]> {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function scrapeNike(keyword: string): Promise<ScrapedItem[]> {
+  // Brand guard: Nike.com only carries Nike products (shoes, sportswear).
+  if (!/nike|air\s*max|air\s*force|dunk|jordan|zoom|pegasus|blazer|cortez/i.test(keyword)) {
+    console.log(`[Nike] Skipping "${keyword}" — not a Nike product`);
+    return [];
+  }
+
   // Fast path: Nike product feed API
   const apiResults = await fetchNikeApi(keyword).catch((e) => {
     console.warn(`[Nike] API fetch failed ("${keyword}"):`, e.message);
@@ -256,8 +262,11 @@ export async function scrapeNike(keyword: string): Promise<ScrapedItem[]> {
     return apiResults;
   }
 
-  // Slow path: Playwright DOM
-  const domResults = await fetchNikeDom(keyword);
+  // Slow path: Playwright DOM — catch browser launch / nav errors gracefully
+  const domResults = await fetchNikeDom(keyword).catch((err) => {
+    console.error(`[Nike] DOM fallback failed ("${keyword}"):`, (err as Error).message);
+    return [] as ScrapedItem[];
+  });
   console.log(`[Nike] "${keyword}" → ${domResults.length} results (DOM)`);
   return domResults;
 }

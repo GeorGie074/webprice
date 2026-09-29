@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+﻿import { chromium } from "playwright";
 import type { ScrapedItem } from "./shopee.js";
 import { normalizeUrl } from "./utils.js";
 
@@ -13,31 +13,41 @@ import { normalizeUrl } from "./utils.js";
  * Products carried: Galaxy phones, tablets, TVs, Galaxy Buds, Galaxy Watch, laptops.
  */
 export async function scrapeSamsung(keyword: string): Promise<ScrapedItem[]> {
-  const browser = await chromium.launch({
-    headless: false,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--window-size=1366,768",
-      "--window-position=-8000,-8000",
-    ],
-    ignoreDefaultArgs: ["--enable-automation"],
-  });
+  // Brand guard: Samsung Shop only carries Samsung/Galaxy products.
+  // Return [] immediately for non-Samsung keywords to avoid an unnecessary browser
+  // launch that would either timeout or find nothing (e.g. "iphone17" on samsung.com).
+  if (!/samsung|galaxy/i.test(keyword)) {
+    console.log(`[Samsung] Skipping "${keyword}" — not a Samsung/Galaxy product`);
+    return [];
+  }
 
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale: "th-TH",
-    timezoneId: "Asia/Bangkok",
-    viewport: { width: 1366, height: 768 },
-  });
-
-  const page    = await context.newPage();
+  let browser: import("playwright").Browser | undefined;
+  let context: import("playwright").BrowserContext | undefined;
   const results: ScrapedItem[] = [];
 
   try {
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1366,768",
+        "--window-position=-8000,-8000",
+      ],
+      ignoreDefaultArgs: ["--enable-automation"],
+    });
+
+    context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      locale: "th-TH",
+      timezoneId: "Asia/Bangkok",
+      viewport: { width: 1366, height: 768 },
+    });
+
+    const page = await context.newPage();
     const searchUrl = `https://www.samsung.com/th/search/?searchvalue=${encodeURIComponent(keyword)}`;
     let capturedItems: any[] = [];
 
@@ -170,8 +180,8 @@ export async function scrapeSamsung(keyword: string): Promise<ScrapedItem[]> {
   } catch (err) {
     console.error(`[Samsung] Error "${keyword}":`, (err as Error).message);
   } finally {
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
     console.log("[Samsung] Browser closed");
   }
 
