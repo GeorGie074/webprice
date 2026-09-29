@@ -115,17 +115,37 @@ async function callCloudflare(
   }
 
   const json = await response.json() as {
-    result?: { response?: string };
+    result?: unknown;
     success?: boolean;
     errors?: { message: string }[];
   };
 
   if (json.success === false) {
-    const msg = json.errors?.[0]?.message ?? "Unknown Cloudflare error";
+    const msg = (json.errors as any)?.[0]?.message ?? "Unknown Cloudflare error";
     throw new Error(msg);
   }
 
-  return json.result?.response?.trim() ?? "";
+  // Log full result to diagnose the actual response structure
+  console.log("[CFVision] Raw result:", JSON.stringify(json.result).slice(0, 500));
+
+  // Handle different Cloudflare response formats robustly
+  const r = json.result as any;
+  let rawText = "";
+
+  if (typeof r?.response === "string") {
+    rawText = r.response;                            // standard CF format
+  } else if (Array.isArray(r?.choices)) {
+    rawText = r.choices[0]?.message?.content ?? "";  // OpenAI-compatible output
+  } else if (typeof r?.generated_text === "string") {
+    rawText = r.generated_text;                      // HuggingFace-style
+  } else if (typeof r === "string") {
+    rawText = r;                                     // plain string result
+  } else {
+    console.warn("[CFVision] Unknown response structure:", JSON.stringify(r).slice(0, 300));
+    throw new Error("CF: unexpected response format — " + JSON.stringify(r).slice(0, 150));
+  }
+
+  return rawText.trim();
 }
 
 export async function identifyProductWithCloudflare(
