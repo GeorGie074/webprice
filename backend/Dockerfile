@@ -13,7 +13,7 @@ RUN npx playwright install chromium --with-deps
 
 # Install Xvfb — provides a virtual X display so Chrome can run with
 # headless:false (better bot-detection evasion) on a headless Linux server.
-RUN apt-get update && apt-get install -y --no-install-recommends xvfb xauth \
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
@@ -28,4 +28,7 @@ EXPOSE 5000
 # and makes $DISPLAY available to child processes.  Chrome then launches in
 # "headed" mode against this virtual screen — indistinguishable from a real
 # desktop to Cloudflare / anti-bot checks — while the container stays headless.
-CMD ["xvfb-run", "--server-args=-screen 0 1366x768x24 -ac", "npm", "run", "start"]
+# Start Xvfb virtual display as a background process, then launch the app.
+# Using Xvfb directly (instead of xvfb-run) avoids the xauth dependency.
+# -ac disables X access control so Chrome can connect without a cookie file.
+CMD ["/bin/sh", "-c", "Xvfb :99 -screen 0 1366x768x24 -ac & sleep 1 && DISPLAY=:99 exec npm run start"]
