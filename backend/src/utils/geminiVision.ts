@@ -150,6 +150,7 @@ export async function identifyProductFromImage(
         const is503 = status === 503 || msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("high demand");
         const is404 = status === 404 || msg.includes("404") || msg.includes("not found");
         const isGone = msg.includes("no longer available") || msg.includes("deprecated");
+        const is429 = status === 429 || msg.includes("429") || msg.includes("quota") || msg.includes("exceeded");
         const isTimeout = err?.name === "AbortError";
 
         console.warn(
@@ -157,8 +158,8 @@ export async function identifyProductFromImage(
           isTimeout ? "TIMEOUT (25s)" : msg.slice(0, 120)
         );
 
-        if (is404 || isGone) {
-          break; // skip this model/version
+        if (is404 || isGone || is429) {
+          break; // skip this model/version (quota exceeded or gone → no point retrying)
         } else if (is503 && attempt < 2) {
           console.log("[GeminiVision] 503 → waiting 2000ms...");
           await new Promise(r => setTimeout(r, 2000)); // 2s retry (was 3s)

@@ -1,11 +1,11 @@
 /**
  * cloudflareVision.ts — Identify a product using Cloudflare Workers AI (Llama 3.2 Vision).
  *
- * Free tier: 10,000 neurons/day — reliable, fast, no 503 issues.
+ * Free tier: 10,000 neurons/day — reliable, no 503 issues.
  * Docs: https://developers.cloudflare.com/workers-ai/models/llama-3.2-11b-vision-instruct/
  *
  * Required env vars:
- *   CF_ACCOUNT_ID  — from Cloudflare dashboard (right sidebar)
+ *   CF_ACCOUNT_ID  — from Cloudflare dashboard URL (32-char hex)
  *   CF_API_TOKEN   — API token with "Workers AI: Run" permission
  */
 
@@ -27,10 +27,10 @@ Respond with ONLY a valid JSON object — no markdown, no explanation:
 
 If you cannot identify the product at all, respond with exactly: null`;
 
-// Vision models available on Cloudflare Workers AI
+// Only models confirmed to exist at Cloudflare Workers AI
+// @cf/meta/llama-3.2-90b-vision-instruct → "No route for that URI" — removed
 const CF_VISION_MODELS = [
   "@cf/meta/llama-3.2-11b-vision-instruct",
-  "@cf/meta/llama-3.2-90b-vision-instruct",
 ];
 
 function parseResponse(text: string): ProductIdentification | null {
@@ -53,6 +53,73 @@ function parseResponse(text: string): ProductIdentification | null {
   }
 }
 
+/**
+ * Call Cloudflare Workers AI vision model.
+ * Handles the "Model Agreement" 403 automatically by sending "agree" first.
+ */
+async function callCloudflare(
+  url: string,
+  imageBytes: number[],
+  apiToken: string
+): Promise<string> {
+  const headers = {
+    "Authorization": `Bearer ${apiToken}`,
+    "Content-Type": "application/json",
+  };
+
+  const payload = {
+    messages: [{ role: "user", content: PROMPT }],
+    image: imageBytes,
+    max_tokens: 1024,
+  };
+
+  let response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  // Handle Llama license agreement (one-time, stored per account)
+  if (response.status === 403) {
+    const errText = await response.text();
+    if (errText.includes("Model Agreement") || errText.includes("agree")) {
+      console.log("[CFVision] License agreement required — auto-agreeing to Llama terms...");
+      // Submit "agree" to accept Meta Llama license
+      await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ prompt: "agree" }),
+      });
+      // Retry the real request
+      response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+    } else {
+      throw Object.assign(new Error(errText.slice(0, 300)), { status: 403 });
+    }
+  }
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw Object.assign(new Error(errBody.slice(0, 300)), { status: response.status });
+  }
+
+  const json = await response.json() as {
+    result?: { response?: string };
+    success?: boolean;
+    errors?: { message: string }[];
+  };
+
+  if (json.success === false) {
+    const msg = json.errors?.[0]?.message ?? "Unknown Cloudflare error";
+    throw new Error(msg);
+  }
+
+  return json.result?.response?.trim() ?? "";
+}
+
 export async function identifyProductWithCloudflare(
   base64Image: string,
   mimeType: string = "image/jpeg"
@@ -65,51 +132,19 @@ export async function identifyProductWithCloudflare(
     return null;
   }
 
+  // Convert base64 to uint8 array (Cloudflare's required image format)
+  const imageBytes = Array.from(Buffer.from(base64Image, "base64"));
+
   let lastError: Error | null = null;
 
   for (const model of CF_VISION_MODELS) {
     try {
       console.log(`[CFVision] Trying ${model}...`);
 
-      // Do NOT encodeURIComponent — Cloudflare expects the model path as-is
-      // e.g. https://api.cloudflare.com/.../ai/run/@cf/meta/llama-3.2-11b-vision-instruct
+      // Model name contains @ and / — do NOT encodeURIComponent
       const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiToken}`,
-          "Content-Type": "application/json",
-        },
-        // Cloudflare Workers AI vision format: separate "image" field + messages text
-        body: JSON.stringify({
-          messages: [{
-            role: "user",
-            content: PROMPT,
-          }],
-          image: Array.from(Buffer.from(base64Image, "base64")), // uint8 array
-          max_tokens: 500,
-          temperature: 0.1,
-        }),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.text();
-        throw Object.assign(new Error(errBody.slice(0, 300)), { status: response.status });
-      }
-
-      const json = await response.json() as {
-        result?: { response?: string };
-        success?: boolean;
-        errors?: { message: string }[];
-      };
-
-      if (!json.success) {
-        const msg = json.errors?.[0]?.message ?? "Unknown Cloudflare error";
-        throw new Error(msg);
-      }
-
-      const text = json.result?.response?.trim() ?? "";
+      const text = await callCloudflare(url, imageBytes, apiToken);
       console.log(`[CFVision] ${model} response:`, text.slice(0, 200));
 
       const parsed = parseResponse(text);
@@ -122,7 +157,7 @@ export async function identifyProductWithCloudflare(
       lastError = err as Error;
       const status = err?.status ?? 0;
       console.warn(`[CFVision] ❌ ${model} status=${status}:`, lastError.message.slice(0, 120));
-      continue; // try next model
+      continue;
     }
   }
 
