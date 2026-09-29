@@ -25,12 +25,12 @@ Respond with ONLY a valid JSON object — no markdown, no explanation:
 
 If you cannot identify the product at all, respond with exactly: null`;
 
-// Groq vision models — tried in order
-const GROQ_MODELS = [
-  "llama-3.2-11b-vision-preview",  // 7,000 RPD free tier
-  "llama-3.2-90b-vision-preview",  // 3,000 RPD — more powerful fallback
-  "meta-llama/llama-4-scout-17b-16e-instruct", // newer model if available
-];
+// Groq vision models — as of Sept 2026, all vision models are decommissioned
+// llama-3.2-11b-vision-preview → decommissioned
+// llama-3.2-90b-vision-preview → decommissioned
+// meta-llama/llama-4-scout-17b-16e-instruct → 404 (no vision support)
+// Keeping empty so function returns null quickly (no wasted API calls)
+const GROQ_MODELS: string[] = [];
 
 function parseResponse(text: string): ProductIdentification | null {
   if (!text || text.trim() === "null") return null;

@@ -59,7 +59,8 @@ function parseResponse(text: string): ProductIdentification | null {
  */
 async function callCloudflare(
   url: string,
-  imageBytes: number[],
+  base64Image: string,
+  mimeType: string,
   apiToken: string
 ): Promise<string> {
   const headers = {
@@ -67,10 +68,17 @@ async function callCloudflare(
     "Content-Type": "application/json",
   };
 
+  // OpenAI-compatible content array format (works with CF's Llama 3.2 Vision)
   const payload = {
-    messages: [{ role: "user", content: PROMPT }],
-    image: imageBytes,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: PROMPT },
+        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+      ],
+    }],
     max_tokens: 1024,
+    temperature: 0.1,
   };
 
   let response = await fetch(url, {
@@ -132,9 +140,6 @@ export async function identifyProductWithCloudflare(
     return null;
   }
 
-  // Convert base64 to uint8 array (Cloudflare's required image format)
-  const imageBytes = Array.from(Buffer.from(base64Image, "base64"));
-
   let lastError: Error | null = null;
 
   for (const model of CF_VISION_MODELS) {
@@ -144,7 +149,7 @@ export async function identifyProductWithCloudflare(
       // Model name contains @ and / — do NOT encodeURIComponent
       const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
 
-      const text = await callCloudflare(url, imageBytes, apiToken);
+      const text = await callCloudflare(url, base64Image, mimeType, apiToken);
       console.log(`[CFVision] ${model} response:`, text.slice(0, 200));
 
       const parsed = parseResponse(text);
