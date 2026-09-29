@@ -23,6 +23,7 @@ function bnnCategoryUrl(keyword: string): string | null {
   const kw = keyword.toLowerCase();
 
   // Apple — specific model pages first, then broader categories
+  if (/iphone\s*17/.test(kw))   return "/p/apple/iphone/iphone-17";
   if (/iphone\s*16/.test(kw))   return "/p/apple/iphone/iphone-16";
   if (/iphone\s*15/.test(kw))   return "/p/apple/iphone/iphone-15";
   if (/iphone\s*14/.test(kw))   return "/p/apple/iphone/iphone-14";
@@ -171,8 +172,17 @@ async function scrapeBNNViaPlaywright(
     console.log(`[BNN] Navigating to ${categoryPath}...`);
     await page.goto(targetUrl, {
       waitUntil: "domcontentloaded",
-      timeout: 25_000,
+      timeout: 30_000,
     });
+
+    // Wait for Cloudflare JS challenge to resolve ("รอสักครู่..." / "Just a moment...")
+    const cfDeadline = Date.now() + 12_000;
+    while (Date.now() < cfDeadline) {
+      const title = await page.title().catch(() => "");
+      if (!title.includes("รอสักครู่") && !title.toLowerCase().includes("just a moment")) break;
+      console.log("[BNN] Cloudflare challenge — waiting...");
+      await page.waitForTimeout(2_000);
+    }
 
     for (let y = 0; y <= 1_500; y += 300) {
       await page.evaluate((sy) => window.scrollTo(0, sy), y);

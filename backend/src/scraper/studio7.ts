@@ -119,6 +119,15 @@ export async function scrapeStudio7(keyword: string): Promise<ScrapedItem[]> {
     console.log(`[Studio7] Searching "${keyword}"...`);
     await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
+    // Wait for Cloudflare JS challenge to resolve ("รอสักครู่..." / "Just a moment...")
+    const cfDeadline = Date.now() + 12_000;
+    while (Date.now() < cfDeadline) {
+      const title = await page.title().catch(() => "");
+      if (!title.includes("รอสักครู่") && !title.toLowerCase().includes("just a moment")) break;
+      console.log("[Studio7] Cloudflare challenge — waiting...");
+      await page.waitForTimeout(2_000);
+    }
+
     // Wait for the Nuxt SPA + API response
     for (let y = 0; y <= 1200; y += 300) {
       try { await page.evaluate((s) => window.scrollTo(0, s), y); } catch { break; }
