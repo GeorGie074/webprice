@@ -133,7 +133,10 @@ async function callCloudflare(
   let rawText = "";
 
   if (typeof r?.response === "string") {
-    rawText = r.response;                            // standard CF format
+    rawText = r.response;                            // standard CF string format
+  } else if (r?.response && typeof r.response === "object") {
+    // Cloudflare returned an already-parsed JSON object — stringify for parseResponse
+    rawText = JSON.stringify(r.response);
   } else if (Array.isArray(r?.choices)) {
     rawText = r.choices[0]?.message?.content ?? "";  // OpenAI-compatible output
   } else if (typeof r?.generated_text === "string") {
