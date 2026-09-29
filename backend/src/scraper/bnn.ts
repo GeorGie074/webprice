@@ -171,17 +171,20 @@ async function scrapeBNNViaPlaywright(
 
     console.log(`[BNN] Navigating to ${categoryPath}...`);
     await page.goto(targetUrl, {
-      waitUntil: "domcontentloaded",
+      waitUntil: "load",     // "load" waits for JS to execute, giving Cloudflare time to redirect
       timeout: 30_000,
     });
 
-    // Wait for Cloudflare JS challenge to resolve ("รอสักครู่..." / "Just a moment...")
-    const cfDeadline = Date.now() + 12_000;
-    while (Date.now() < cfDeadline) {
-      const title = await page.title().catch(() => "");
-      if (!title.includes("รอสักครู่") && !title.toLowerCase().includes("just a moment")) break;
-      console.log("[BNN] Cloudflare challenge — waiting...");
-      await page.waitForTimeout(2_000);
+    // If Cloudflare challenge appears, wait for it to auto-resolve (JS runs the proof-of-work)
+    try {
+      await page.waitForFunction(
+        () => !document.title.includes("รอสักครู่") && !document.title.toLowerCase().includes("just a moment"),
+        { timeout: 20_000, polling: 1500 }
+      );
+      console.log("[BNN] Page loaded (no Cloudflare challenge)");
+    } catch {
+      const t = await page.title().catch(() => "?");
+      console.log(`[BNN] Cloudflare challenge did not resolve — page: "${t.slice(0, 50)}"`);
     }
 
     for (let y = 0; y <= 1_500; y += 300) {

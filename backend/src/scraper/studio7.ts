@@ -92,9 +92,13 @@ export async function scrapeStudio7(keyword: string): Promise<ScrapedItem[]> {
     });
 
     const page    = await context.newPage();
-    const searchUrl = `https://www.studio7thailand.com/th/search?q=${encodeURIComponent(keyword)}`;
+    // Use the stable collection page (Cloudflare-friendly) instead of the
+    // search URL which is heavily protected. The collection page fires the
+    // same product-groups API under the hood.
+    const targetUrl  = categoryUrl(keyword);
+    const searchUrl  = `https://www.studio7thailand.com/th/search?q=${encodeURIComponent(keyword)}`;
 
-    // ── Intercept product-groups API ─────────────────────────────────────────
+    // ── Intercept product-groups API (fired by both search and collection pages) ──
     let capturedItems: any[] = [];
 
     page.on("response", async (resp) => {
@@ -115,17 +119,24 @@ export async function scrapeStudio7(keyword: string): Promise<ScrapedItem[]> {
       }
     });
 
-    // ── Navigate to search ───────────────────────────────────────────────────
-    console.log(`[Studio7] Searching "${keyword}"...`);
-    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    // ── Navigate to collection page first (less Cloudflare-protected) ────────
+    console.log(`[Studio7] Navigating to collection: "${targetUrl}"...`);
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
-    // Wait for Cloudflare JS challenge to resolve ("รอสักครู่..." / "Just a moment...")
-    const cfDeadline = Date.now() + 12_000;
-    while (Date.now() < cfDeadline) {
-      const title = await page.title().catch(() => "");
-      if (!title.includes("รอสักครู่") && !title.toLowerCase().includes("just a moment")) break;
-      console.log("[Studio7] Cloudflare challenge — waiting...");
-      await page.waitForTimeout(2_000);
+    // If collection page still hits Cloudflare challenge, fall back to search page
+    let title = await page.title().catch(() => "");
+    if (title.includes("รอสักครู่") || title.toLowerCase().includes("just a moment")) {
+      console.log(`[Studio7] Collection page blocked — trying search page...`);
+      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+
+      // Wait for Cloudflare JS challenge to resolve (up to 12s)
+      const cfDeadline = Date.now() + 12_000;
+      while (Date.now() < cfDeadline) {
+        title = await page.title().catch(() => "");
+        if (!title.includes("รอสักครู่") && !title.toLowerCase().includes("just a moment")) break;
+        console.log("[Studio7] Cloudflare challenge — waiting...");
+        await page.waitForTimeout(2_000);
+      }
     }
 
     // Wait for the Nuxt SPA + API response
