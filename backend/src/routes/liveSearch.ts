@@ -3,11 +3,13 @@ import { protect } from "../middleware/auth.js";
 import type { ScrapedItem } from "../scraper/shopee.js";
 
 import { scrapeLazada }   from "../scraper/lazada.js";
-import { scrapeBNN }      from "../scraper/bnn.js";
+// BNN and Studio 7 are blocked at IP level by Cloudflare on the current server.
+// Disabled from live search to avoid showing "ไม่พบสินค้า" every time.
+// import { scrapeBNN }      from "../scraper/bnn.js";
+// import { scrapeStudio7 }  from "../scraper/studio7.js";
 import { scrapePowerBuy } from "../scraper/powerbuy.js";
 // scrapePowerBuy now returns { items, confirmed } — unwrap to ScrapedItem[] for the generic registry
 const scrapePowerBuyItems = (keyword: string) => scrapePowerBuy(keyword).then((r) => r.items);
-import { scrapeStudio7 }  from "../scraper/studio7.js";
 import { scrapeJIB }      from "../scraper/jib.js";
 import { scrapeSamsung }  from "../scraper/samsung.js";
 import { scrapeSony }     from "../scraper/sony.js";
@@ -30,9 +32,9 @@ type ScraperFn = (keyword: string) => Promise<ScrapedItem[]>;
 
 const SCRAPERS: Record<string, ScraperFn> = {
   lazada:   scrapeLazada,
-  bnn:      scrapeBNN,
+  // bnn:   disabled — server IP blocked by Cloudflare
   powerbuy: scrapePowerBuyItems,
-  studio7:  scrapeStudio7,
+  // studio7: disabled — server IP blocked by Cloudflare
   jib:      scrapeJIBItems,
   samsung:  scrapeSamsung,
   sony:     scrapeSony,
@@ -45,14 +47,14 @@ const SCRAPERS: Record<string, ScraperFn> = {
 
 export const LIVE_SEARCH_PLATFORMS: { id: string; label: string }[] = [
   { id: "lazada",   label: "Lazada"         },
-  { id: "bnn",      label: "Banana IT"      },
+  // { id: "bnn",  label: "Banana IT" }  — disabled: server IP blocked by Cloudflare
   { id: "powerbuy", label: "Power Buy"      },
   { id: "jib",      label: "JIB"            },
   { id: "central",  label: "Central Online" },
   { id: "samsung",  label: "Samsung Shop"   },
   { id: "sony",     label: "Sony Store"     },
   { id: "apple",    label: "Apple Store"    },
-  { id: "studio7",  label: "Studio 7"       },
+  // { id: "studio7", label: "Studio 7" }  — disabled: server IP blocked by Cloudflare
   { id: "dyson",    label: "Dyson Store"    },
   { id: "nike",     label: "Nike.com"       },
   { id: "watsons",  label: "Watsons"        },
