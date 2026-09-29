@@ -134,7 +134,7 @@ export default function VisualSearchPage() {
         </p>
         <p className="text-xs text-purple-500 mt-1 flex items-center justify-center gap-1">
           <Sparkles size={11} />
-          Powered by Google Gemini Flash (Free)
+          Powered by Cloudflare AI · Llama 3.2 Vision (Free)
         </p>
       </div>
 
@@ -207,7 +207,7 @@ export default function VisualSearchPage() {
             <div className="flex flex-col items-center gap-3 py-4">
               <div className="w-10 h-10 rounded-full border-4 border-purple-200 border-t-purple-500 animate-spin" />
               <p className="text-sm font-medium text-gray-600">Gemini กำลังวิเคราะห์รูปภาพ...</p>
-              <p className="text-xs text-gray-400">อาจใช้เวลา 5–20 วินาที (ลอง model สำรองถ้า server ยุ่ง)</p>
+              <p className="text-xs text-gray-400">อาจใช้เวลา 2–5 วินาที</p>
             </div>
           )}
         </div>
@@ -276,7 +276,7 @@ export default function VisualSearchPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <Sparkles size={14} className="text-purple-500" />
-                  <span className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Gemini ระบุสินค้า</span>
+                  <span className="text-xs font-semibold text-purple-600 uppercase tracking-wide">AI ระบุสินค้า</span>
                   {confidenceBadge && (
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${confidenceBadge.color}`}>
                       {confidenceBadge.text}
