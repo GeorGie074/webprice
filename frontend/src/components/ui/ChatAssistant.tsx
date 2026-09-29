@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { chatApi } from "../../api";
-import { Product } from "../../types";
+import { Product, COMING_SOON_PLATFORMS } from "../../types";
 import { proxyImage } from "../../utils/imageUrl";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -62,13 +62,16 @@ function getChips(filters: ChatFilters, productCount: number): string[] {
 // ── Mini product card inside chat ─────────────────────────────────────────────
 
 function ChatProductCard({ product }: { product: Product }) {
-  // Use cheapest available price across all platforms (no COMING_SOON filtering here)
-  const available = product.prices.filter((p) => p.available !== false);
+  // Mirror main site: exclude COMING_SOON_PLATFORMS (e.g. Shopee) from price display
+  const available = product.prices.filter(
+    (p) => !COMING_SOON_PLATFORMS.includes(p.platform) && p.available !== false
+  );
+  // Fall back to product.minPrice (no platform shown) when all prices are COMING_SOON
   const minPrice =
     available.length > 0
       ? Math.min(...available.map((p) => p.price))
       : product.minPrice;
-  const cheapest = available.find((p) => p.price === minPrice) ?? product.prices[0];
+  const cheapest = available.find((p) => p.price === minPrice);
 
   return (
     <Link
