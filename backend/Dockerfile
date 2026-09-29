@@ -13,7 +13,7 @@ RUN npx playwright install chromium --with-deps
 
 # Install Xvfb — provides a virtual X display so Chrome can run with
 # headless:false (better bot-detection evasion) on a headless Linux server.
-RUN apt-get update && apt-get install -y --no-install-recommends xvfb \
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb xauth \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
