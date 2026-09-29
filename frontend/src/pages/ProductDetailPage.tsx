@@ -13,7 +13,7 @@ import { useRecentlyViewed } from "../hooks/useRecentlyViewed";
 import {
   Star, Bell, CheckCircle, TrendingDown,
   ChevronRight, AlertCircle, Clock, Heart, Flame, Brain,
-  ShoppingCart, Tag, RefreshCw, BarChart2, GitCompare, Layers,
+  ShoppingCart, Tag, RefreshCw, BarChart2, GitCompare, Layers, ExternalLink,
 } from "lucide-react";
 import { ProductCard } from "../components/ui/ProductCard";
 import { ProductCardSkeleton } from "../components/ui/ProductCardSkeleton";
@@ -365,8 +365,9 @@ export default function ProductDetailPage() {
 
         <div className="p-4 space-y-3">
           {sortedPrices.map((p, idx) => {
-            const isCS      = COMING_SOON_PLATFORMS.includes(p.platform);
-            const isBest    = !isCS && p.price === cheapest.price;
+            const isCS         = COMING_SOON_PLATFORMS.includes(p.platform);
+            const isOutOfStock = p.inStock === false;
+            const isBest    = !isCS && !isOutOfStock && p.price === cheapest.price;
             const discountPct = p.originalPrice > p.price
               ? Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100) : 0;
             const overBest  = !isCS && !isBest && cheapest
@@ -376,8 +377,9 @@ export default function ProductDetailPage() {
               <div
                 key={idx}
                 className={`rounded-2xl border p-4 transition-all ${
-                  isCS    ? "bg-gray-50/60 border-gray-100 opacity-55" :
-                  isBest  ? "bg-emerald-50 border-emerald-200 shadow-sm" :
+                  isCS         ? "bg-gray-50/60 border-gray-100 opacity-55" :
+                  isBest       ? "bg-emerald-50 border-emerald-200 shadow-sm" :
+                  isOutOfStock ? "bg-gray-50/70 border-gray-200 opacity-75" :
                   "bg-white border-gray-100 hover:border-blue-100 hover:shadow-sm"
                 }`}
               >
@@ -429,16 +431,21 @@ export default function ProductDetailPage() {
                     ) : (
                       <>
                         <div>
-                          <p className="text-xl font-extrabold text-gray-900 leading-none">
+                          <p className={`text-xl font-extrabold leading-none ${
+                            isOutOfStock ? "text-gray-400" : "text-gray-900"
+                          }`}>
                             ฿{p.price.toLocaleString()}
                           </p>
-                          {discountPct > 0 && (
+                          {isOutOfStock && (
+                            <p className="text-[11px] font-semibold text-red-400 mt-0.5 text-right">สินค้าหมด</p>
+                          )}
+                          {!isOutOfStock && discountPct > 0 && (
                             <p className="text-xs text-red-400 mt-0.5 flex items-center justify-end gap-1">
                               <span className="line-through text-gray-300">฿{p.originalPrice.toLocaleString()}</span>
                               <span className="font-semibold">-{discountPct}%</span>
                             </p>
                           )}
-                          {overBest > 0 && (
+                          {!isOutOfStock && overBest > 0 && (
                             <p className="text-[10px] text-gray-400 mt-0.5">+{overBest}% กว่าถูกสุด</p>
                           )}
                         </div>
@@ -448,12 +455,17 @@ export default function ProductDetailPage() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className={`inline-flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl transition-all ${
-                            isBest
+                            isOutOfStock
+                              ? "bg-gray-100 hover:bg-gray-200 text-gray-500 border border-gray-200"
+                              : isBest
                               ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-200"
                               : "bg-blue-600 hover:bg-blue-500 text-white"
                           }`}
                         >
-                          <ShoppingCart size={11} /> ไปซื้อ
+                          {isOutOfStock
+                            ? <><ExternalLink size={11} /> ดูร้านค้า</>
+                            : <><ShoppingCart size={11} /> ไปซื้อ</>
+                          }
                         </a>
                       </>
                     )}
