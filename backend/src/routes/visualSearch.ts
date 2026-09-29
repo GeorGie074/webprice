@@ -13,6 +13,7 @@
 import express from "express";
 import { identifyProductFromImage } from "../utils/geminiVision.js";
 import { identifyProductWithGroq } from "../utils/groqVision.js";
+import { identifyProductWithCloudflare } from "../utils/cloudflareVision.js";
 import Product from "../models/Product.js";
 
 const router = express.Router();
@@ -68,22 +69,31 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "image (base64) is required" });
   }
 
-  // ── 1. Identify product — Groq first, Gemini as fallback ───────────────────
+  // ── 1. Identify product — Cloudflare → Groq → Gemini ───────────────────────
   let identification;
   try {
-    // Try Groq first (faster, more reliable free tier)
-    const groqResult = await identifyProductWithGroq(image, mimeType).catch((err) => {
-      console.warn("[VisualSearch] Groq failed, falling back to Gemini:", (err as Error).message.slice(0, 100));
-      return null; // null = trigger Gemini fallback
+    // 1a. Try Cloudflare Workers AI (10k free/day, Llama 3.2 Vision)
+    const cfResult = await identifyProductWithCloudflare(image, mimeType).catch((err) => {
+      console.warn("[VisualSearch] Cloudflare failed:", (err as Error).message.slice(0, 100));
+      return null;
     });
 
-    if (groqResult !== null) {
-      // Groq returned a result (even undefined-identification is fine here)
-      identification = groqResult;
+    if (cfResult !== null) {
+      identification = cfResult;
     } else {
-      // Groq skipped (no key) or failed → try Gemini
-      console.log("[VisualSearch] Trying Gemini...");
-      identification = await identifyProductFromImage(image, mimeType);
+      // 1b. Try Groq (no vision models currently, but kept for future)
+      const groqResult = await identifyProductWithGroq(image, mimeType).catch((err) => {
+        console.warn("[VisualSearch] Groq failed:", (err as Error).message.slice(0, 100));
+        return null;
+      });
+
+      if (groqResult !== null) {
+        identification = groqResult;
+      } else {
+        // 1c. Fallback to Gemini
+        console.log("[VisualSearch] Trying Gemini...");
+        identification = await identifyProductFromImage(image, mimeType);
+      }
     }
   } catch (err) {
     const msg = (err as Error).message;
