@@ -3,7 +3,6 @@
  *
  * Uses direct fetch to avoid SDK throttling.
  * Tries v1beta first (newer models live there), falls back to v1.
- * Includes older stable models (1.5-flash) with higher daily quotas as last resort.
  */
 
 export interface ProductIdentification {
@@ -31,17 +30,18 @@ Respond with ONLY a valid JSON object — no markdown, no explanation:
 
 If you cannot identify the product at all, respond with exactly: null`;
 
-// (model, apiVersion) — tried in order; v1beta first since newer models live there
-// Model names confirmed from /api/visual-search/models endpoint (this API key's actual models)
+// Model names confirmed from /api/visual-search/models for this API key
 const MODEL_SEQUENCE: Array<{ model: string; apiVersion: "v1beta" | "v1" }> = [
-  { model: "gemini-3.8-flash",       apiVersion: "v1beta" }, // newest — confirmed in models list
+  { model: "gemini-3.8-flash",       apiVersion: "v1beta" },
   { model: "gemini-3.8-flash",       apiVersion: "v1"     },
-  { model: "gemini-3.5-flash",       apiVersion: "v1beta" }, // confirmed in models list
+  { model: "gemini-3.5-flash",       apiVersion: "v1beta" },
   { model: "gemini-3.5-flash",       apiVersion: "v1"     },
-  { model: "gemini-2.5-flash-image", apiVersion: "v1beta" }, // confirmed in models list
-  { model: "gemini-2.5-flash",       apiVersion: "v1beta" }, // fallback
+  { model: "gemini-2.5-flash-image", apiVersion: "v1beta" },
+  { model: "gemini-2.5-flash",       apiVersion: "v1beta" },
   { model: "gemini-2.5-flash",       apiVersion: "v1"     },
 ];
+
+const FETCH_TIMEOUT_MS = 25_000; // 25 s per request — prevent hanging
 
 async function callGemini(
   modelName: string,
@@ -52,43 +52,59 @@ async function callGemini(
 ): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:generateContent?key=${apiKey}`;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: PROMPT },
-          { inlineData: { mimeType, data: base64Image } },
-        ],
-      }],
-      generationConfig: { maxOutputTokens: 500, temperature: 0.1 },
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw Object.assign(new Error(errBody.slice(0, 300)), { status: response.status });
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: PROMPT },
+            { inlineData: { mimeType, data: base64Image } },
+          ],
+        }],
+        // 1024 tokens — enough to complete the JSON without truncation
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw Object.assign(new Error(errBody.slice(0, 300)), { status: response.status });
+    }
+
+    const json = await response.json() as {
+      candidates?: { content?: { parts?: { text?: string }[] } }[];
+    };
+    return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+  } finally {
+    clearTimeout(timer);
   }
-
-  const json = await response.json() as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
-  return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 }
 
-function parseResponse(text: string): ProductIdentification | null {
-  if (!text || text === "null") return null;
+/** Returns parsed result, "PARSE_FAILED" sentinel, or throws on HTTP error */
+function parseResponse(text: string): ProductIdentification | null | "PARSE_FAILED" {
+  if (!text || text.trim() === "null") return null; // model says: can't identify
+
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) { console.warn("[GeminiVision] No JSON:", text.slice(0, 200)); return null; }
+  if (!jsonMatch) {
+    console.warn("[GeminiVision] No closing } (likely truncated):", text.slice(0, 200));
+    return "PARSE_FAILED"; // truncated → try next model
+  }
   try {
     const parsed: ProductIdentification = JSON.parse(jsonMatch[0]);
     if (!parsed.brand || !parsed.name || !Array.isArray(parsed.keywords)) {
-      console.warn("[GeminiVision] Incomplete:", parsed); return null;
+      console.warn("[GeminiVision] Incomplete fields:", parsed);
+      return "PARSE_FAILED"; // malformed → try next model
     }
     return parsed;
   } catch {
-    console.warn("[GeminiVision] JSON parse failed:", text.slice(0, 200)); return null;
+    console.warn("[GeminiVision] JSON.parse failed:", text.slice(0, 200));
+    return "PARSE_FAILED"; // parse error → try next model
   }
 }
 
@@ -109,10 +125,24 @@ export async function identifyProductFromImage(
       try {
         console.log(`[GeminiVision] Trying ${model} (${apiVersion}) attempt=${attempt}...`);
         const text = await callGemini(model, apiVersion, base64Image, mimeType, apiKey);
-        console.log(`[GeminiVision] ${model} response:`, text.slice(0, 200));
-        const parsed = parseResponse(text);
-        if (parsed) console.log(`[GeminiVision] ✅ ${parsed.brand} ${parsed.model} (${parsed.confidence})`);
-        return parsed;
+        console.log(`[GeminiVision] ${model} raw:`, text.slice(0, 200));
+
+        const result = parseResponse(text);
+
+        if (result === "PARSE_FAILED") {
+          // Truncated or malformed response — skip to next model/version
+          console.warn(`[GeminiVision] Parse failed for ${model} (${apiVersion}), trying next...`);
+          break; // break inner loop → next MODEL_SEQUENCE entry
+        }
+
+        // result is null (model said "can't identify") or a valid object
+        if (result) {
+          console.log(`[GeminiVision] ✅ ${result.brand} ${result.model} (${result.confidence})`);
+        } else {
+          console.log(`[GeminiVision] ${model} returned null (product not identifiable)`);
+        }
+        return result; // null or valid — both are "model gave a definitive answer"
+
       } catch (err: any) {
         lastError = err as Error;
         const status = err?.status ?? 0;
@@ -120,17 +150,20 @@ export async function identifyProductFromImage(
         const is503 = status === 503 || msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("high demand");
         const is404 = status === 404 || msg.includes("404") || msg.includes("not found");
         const isGone = msg.includes("no longer available") || msg.includes("deprecated");
+        const isTimeout = err?.name === "AbortError";
 
-        console.warn(`[GeminiVision] ❌ ${model} (${apiVersion}) attempt=${attempt} status=${status}:`, msg.slice(0, 120));
+        console.warn(
+          `[GeminiVision] ❌ ${model} (${apiVersion}) attempt=${attempt} status=${status}:`,
+          isTimeout ? "TIMEOUT (25s)" : msg.slice(0, 120)
+        );
 
         if (is404 || isGone) {
-          break; // model not available at this endpoint, skip to next combo
+          break; // skip this model/version
         } else if (is503 && attempt < 2) {
-          const wait = 3000; // 3s pause before retry
-          console.log(`[GeminiVision] 503 → waiting ${wait}ms...`);
-          await new Promise(r => setTimeout(r, wait));
+          console.log("[GeminiVision] 503 → waiting 2000ms...");
+          await new Promise(r => setTimeout(r, 2000)); // 2s retry (was 3s)
         } else {
-          break; // exhausted retries → try next combo
+          break; // exhausted retries → next combo
         }
       }
     }
