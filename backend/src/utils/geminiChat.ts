@@ -1,25 +1,20 @@
 /**
- * geminiChat.ts — AI assistant for conversational product search.
+ * geminiChat.ts — AI shopping assistant fallback using Google Gemini (direct fetch).
  *
- * Two-step process:
- *  1. Extract structured filters from user message (fast, cheap)
- *  2. Format a Thai recommendation response using real DB products
- *
- * Uses gemini-2.5-flash (same key as Visual Search — no extra cost).
+ * Used as fallback when Cloudflare Workers AI is unavailable.
+ * Uses the same working models as geminiVision.ts (gemini-3.8-flash, gemini-3.5-flash).
+ * Direct fetch avoids SDK issues; 10s timeout to prevent hangs.
  */
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ChatFilters {
-  category?: string;        // "smartphone" | "laptop" | "tablet" | "audio" | "home" | "fashion" | "beauty" | "health"
-  maxPrice?: number;        // THB
-  minPrice?: number;        // THB
-  brands?: string[];        // ["Apple", "Samsung"]
-  keywords?: string[];      // free-text keywords for $regex search
-  compareMode?: boolean;    // user wants side-by-side comparison
+  category?: string;      // "smartphone"|"laptop"|"tablet"|"audio"|"home"|"fashion"|"beauty"|"health"
+  maxPrice?: number;      // THB
+  minPrice?: number;      // THB
+  brands?: string[];      // ["Apple", "Samsung"]
+  keywords?: string[];    // free-text keywords for $regex search
+  compareMode?: boolean;  // user wants side-by-side comparison
   sortBy?: "price" | "rating" | "reviews";
 }
 
@@ -28,7 +23,86 @@ export interface ChatMessage {
   content: string;
 }
 
-// ── Step 1: Extract filters ───────────────────────────────────────────────────
+interface ProductSummary {
+  name: string;
+  brand: string;
+  minPrice: number;
+  platform: string;
+  rating: number;
+  category: string;
+}
+
+// ── Model sequence (working models for this API key) ──────────────────────────
+
+const GEMINI_MODELS = [
+  { model: "gemini-3.8-flash", apiVersion: "v1beta" as const },
+  { model: "gemini-3.8-flash", apiVersion: "v1"     as const },
+  { model: "gemini-3.5-flash", apiVersion: "v1beta" as const },
+  { model: "gemini-3.5-flash", apiVersion: "v1"     as const },
+];
+
+const FETCH_TIMEOUT_MS = 10_000; // 10s — chat needs to feel responsive
+
+// ── Core fetch helper ─────────────────────────────────────────────────────────
+
+async function callGemini(
+  modelName: string,
+  apiVersion: "v1beta" | "v1",
+  promptText: string,
+  apiKey: string
+): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:generateContent?key=${apiKey}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }],
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.2 },
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw Object.assign(new Error(errBody.slice(0, 300)), { status: response.status });
+    }
+
+    const json = await response.json() as {
+      candidates?: { content?: { parts?: { text?: string }[] } }[];
+    };
+    return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function tryGemini(promptText: string): Promise<string | null> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  for (const { model, apiVersion } of GEMINI_MODELS) {
+    try {
+      const text = await callGemini(model, apiVersion, promptText, apiKey);
+      if (text) return text;
+    } catch (err: any) {
+      const status  = err?.status ?? 0;
+      const is404   = status === 404 || (err as Error).message.includes("404");
+      const is429   = status === 429 || (err as Error).message.includes("quota");
+      const isAbort = (err as Error).name === "AbortError";
+      console.warn(`[GeminiChat] ${model} (${apiVersion}) failed status=${status}:`,
+        isAbort ? "TIMEOUT" : (err as Error).message.slice(0, 80));
+      if (is404 || is429) break; // skip remaining models
+    }
+  }
+  return null;
+}
+
+// ── Prompts ───────────────────────────────────────────────────────────────────
 
 const FILTER_PROMPT = `You are a filter extractor for a Thai e-commerce price comparison website.
 
@@ -57,35 +131,6 @@ Rules:
 - ดีที่สุด/รีวิวดี → sortBy: "rating"
 - Return ONLY the JSON object, nothing else`;
 
-export async function extractFilters(
-  userMessage: string,
-  history: ChatMessage[]
-): Promise<ChatFilters> {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-  // Include last 2 exchanges for context (e.g. "ถูกกว่านี้หน่อย" needs to know what was searched)
-  const context = history
-    .slice(-4)
-    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-    .join("\n");
-
-  const prompt = context
-    ? `${FILTER_PROMPT}\n\nConversation context:\n${context}\n\nNow extract filters for: "${userMessage}"`
-    : `${FILTER_PROMPT}\n\nUser message: "${userMessage}"`;
-
-  try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return {};
-    return JSON.parse(jsonMatch[0]) as ChatFilters;
-  } catch {
-    return {};
-  }
-}
-
-// ── Step 2: Generate Thai response with real products ─────────────────────────
-
 const ASSISTANT_SYSTEM = `คุณคือ AI assistant สำหรับเปรียบราคาสินค้าในเว็บไซต์ PriceCompare ซึ่งเปรียบราคาจากหลายแพลตฟอร์ม (Lazada, Shopee, JIB, Power Buy ฯลฯ)
 
 บทบาทของคุณ:
@@ -100,13 +145,30 @@ const ASSISTANT_SYSTEM = `คุณคือ AI assistant สำหรับเ�
 - ระบุราคาและแพลตฟอร์มที่ถูกสุดเสมอ
 - ตอบไม่เกิน 3-4 ประโยคต่อสินค้า`;
 
-interface ProductSummary {
-  name: string;
-  brand: string;
-  minPrice: number;
-  platform: string;
-  rating: number;
-  category: string;
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export async function extractFilters(
+  userMessage: string,
+  history: ChatMessage[]
+): Promise<ChatFilters> {
+  const context = history
+    .slice(-4)
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .join("\n");
+
+  const prompt = context
+    ? `${FILTER_PROMPT}\n\nConversation context:\n${context}\n\nNow extract filters for: "${userMessage}"`
+    : `${FILTER_PROMPT}\n\nUser message: "${userMessage}"`;
+
+  try {
+    const text = await tryGemini(prompt);
+    if (!text) return {};
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return {};
+    return JSON.parse(jsonMatch[0]) as ChatFilters;
+  } catch {
+    return {};
+  }
 }
 
 export async function generateResponse(
@@ -115,13 +177,11 @@ export async function generateResponse(
   products: ProductSummary[],
   filters: ChatFilters
 ): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
   const productContext =
     products.length > 0
       ? `สินค้าที่พบในระบบ (${products.length} รายการ):\n` +
         products
-          .slice(0, 6) // max 6 products to keep context small
+          .slice(0, 6)
           .map(
             (p, i) =>
               `${i + 1}. ${p.brand} ${p.name} — ราคาต่ำสุด ฿${p.minPrice.toLocaleString()} (${p.platform}) ★${p.rating.toFixed(1)}`
@@ -141,8 +201,7 @@ export async function generateResponse(
 
   const prompt = `${ASSISTANT_SYSTEM}
 
-${historyText ? `ประวัติการสนทนา:\n${historyText}\n` : ""}
-ข้อมูลสินค้าจากระบบ:
+${historyText ? `ประวัติการสนทนา:\n${historyText}\n` : ""}ข้อมูลสินค้าจากระบบ:
 ${productContext}
 
 เงื่อนไขที่ค้นหา: ${filtersText || "ทั่วไป"}
@@ -151,11 +210,9 @@ ${productContext}
 
 ตอบกลับเป็นภาษาไทย:`;
 
-  try {
-    const result = await model.generateContent(prompt);
-    return result.response.text().trim();
-  } catch (err) {
-    console.error("[GeminiChat] Response error:", (err as Error).message);
-    return "ขออภัยครับ ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
-  }
+  const text = await tryGemini(prompt);
+  if (text) return text;
+
+  console.error("[GeminiChat] All models failed — returning fallback message");
+  return "ขออภัยครับ ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
 }

@@ -15,9 +15,12 @@
  *     products: Product[],  — matched products from DB (max 6)
  *     filters: ChatFilters  — extracted filters for debugging
  *   }
+ *
+ * AI chain: Cloudflare Workers AI (Llama 3.3 70B) → Gemini (gemini-3.8-flash / 3.5-flash)
  */
 import express from "express";
-import { extractFilters, generateResponse, type ChatMessage } from "../utils/geminiChat.js";
+import { extractFilters, generateResponse, type ChatMessage, type ChatFilters } from "../utils/geminiChat.js";
+import { extractFiltersWithCloudflare, generateResponseWithCloudflare } from "../utils/cloudflareChat.js";
 import Product from "../models/Product.js";
 
 const router = express.Router();
@@ -32,9 +35,21 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "message is required" });
   }
 
-  // ── 1. Extract filters from user message ─────────────────────────────────
-  const filters = await extractFilters(message, history);
-  console.log(`[Chat] Filters:`, filters);
+  // ── 1. Extract filters — Cloudflare → Gemini fallback ────────────────────
+  let filters: ChatFilters;
+  const cfFilters = await extractFiltersWithCloudflare(message, history).catch((err) => {
+    console.warn("[Chat] CF filter extraction failed:", (err as Error).message.slice(0, 80));
+    return null;
+  });
+
+  if (cfFilters !== null) {
+    filters = cfFilters;
+    console.log("[Chat] CF filters:", filters);
+  } else {
+    console.log("[Chat] CF filters unavailable — falling back to Gemini");
+    filters = await extractFilters(message, history);
+    console.log("[Chat] Gemini filters:", filters);
+  }
 
   // ── 2. Query database with extracted filters ──────────────────────────────
   const dbFilter: Record<string, unknown> = { hidden: { $ne: true } };
@@ -62,7 +77,6 @@ router.post("/", async (req, res) => {
       { nameTh: { $regex: kw, $options: "i" } },
       { tags:   { $regex: kw, $options: "i" } },
     ]);
-    // Merge with existing $or if any, otherwise set
     dbFilter.$or = keywordOr;
   }
 
@@ -79,7 +93,7 @@ router.post("/", async (req, res) => {
 
   console.log(`[Chat] Found ${products.length} products for: "${message}"`);
 
-  // ── 3. Build product summaries for Gemini ────────────────────────────────
+  // ── 3. Build product summaries for AI ─────────────────────────────────────
   const summaries = products.map((p) => {
     const activePrices = p.prices.filter(
       (pr) => pr.available !== false
@@ -98,8 +112,13 @@ router.post("/", async (req, res) => {
     };
   });
 
-  // ── 4. Generate Thai response ─────────────────────────────────────────────
-  const aiMessage = await generateResponse(message, history, summaries, filters);
+  // ── 4. Generate Thai response — Cloudflare → Gemini fallback ─────────────
+  const cfResponse = await generateResponseWithCloudflare(message, history, summaries, filters).catch((err) => {
+    console.warn("[Chat] CF response generation failed:", (err as Error).message.slice(0, 80));
+    return null;
+  });
+
+  const aiMessage = cfResponse ?? await generateResponse(message, history, summaries, filters);
 
   return res.json({
     message: aiMessage,

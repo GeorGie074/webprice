@@ -176,7 +176,7 @@ export function ChatAssistant() {
             <p className="text-sm font-bold text-white">AI Shopping Assistant</p>
             <p className="text-[10px] text-purple-200 flex items-center gap-1">
               <Sparkles size={9} />
-              Powered by Gemini 2.5 Flash
+              Powered by Cloudflare AI · Llama 3.3
             </p>
           </div>
           <button
