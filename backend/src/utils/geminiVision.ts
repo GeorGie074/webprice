@@ -32,14 +32,15 @@ Respond with ONLY a valid JSON object — no markdown, no explanation:
 If you cannot identify the product at all, respond with exactly: null`;
 
 // (model, apiVersion) — tried in order; v1beta first since newer models live there
+// Model names confirmed from /api/visual-search/models endpoint (this API key's actual models)
 const MODEL_SEQUENCE: Array<{ model: string; apiVersion: "v1beta" | "v1" }> = [
-  { model: "gemini-2.5-flash", apiVersion: "v1beta" }, // newest model on beta
-  { model: "gemini-2.5-flash", apiVersion: "v1"     }, // same, stable endpoint
-  { model: "gemini-2.0-flash", apiVersion: "v1beta" }, // slightly older
-  { model: "gemini-2.0-flash", apiVersion: "v1"     },
-  { model: "gemini-1.5-flash", apiVersion: "v1"     }, // 1500 RPD quota (high limit)
-  { model: "gemini-1.5-flash", apiVersion: "v1beta" },
-  { model: "gemini-1.5-pro",   apiVersion: "v1"     }, // pro fallback
+  { model: "gemini-3.8-flash",       apiVersion: "v1beta" }, // newest — confirmed in models list
+  { model: "gemini-3.8-flash",       apiVersion: "v1"     },
+  { model: "gemini-3.5-flash",       apiVersion: "v1beta" }, // confirmed in models list
+  { model: "gemini-3.5-flash",       apiVersion: "v1"     },
+  { model: "gemini-2.5-flash-image", apiVersion: "v1beta" }, // confirmed in models list
+  { model: "gemini-2.5-flash",       apiVersion: "v1beta" }, // fallback
+  { model: "gemini-2.5-flash",       apiVersion: "v1"     },
 ];
 
 async function callGemini(

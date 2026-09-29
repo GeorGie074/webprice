@@ -71,9 +71,9 @@ export async function identifyProductWithCloudflare(
     try {
       console.log(`[CFVision] Trying ${model}...`);
 
-      // URL-encode the model name (contains @ and / characters)
-      const encodedModel = encodeURIComponent(model);
-      const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodedModel}`;
+      // Do NOT encodeURIComponent — Cloudflare expects the model path as-is
+      // e.g. https://api.cloudflare.com/.../ai/run/@cf/meta/llama-3.2-11b-vision-instruct
+      const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
 
       const response = await fetch(url, {
         method: "POST",
@@ -81,17 +81,13 @@ export async function identifyProductWithCloudflare(
           "Authorization": `Bearer ${apiToken}`,
           "Content-Type": "application/json",
         },
+        // Cloudflare Workers AI vision format: separate "image" field + messages text
         body: JSON.stringify({
           messages: [{
             role: "user",
-            content: [
-              { type: "text", text: PROMPT },
-              {
-                type: "image_url",
-                image_url: { url: `data:${mimeType};base64,${base64Image}` },
-              },
-            ],
+            content: PROMPT,
           }],
+          image: Array.from(Buffer.from(base64Image, "base64")), // uint8 array
           max_tokens: 500,
           temperature: 0.1,
         }),
