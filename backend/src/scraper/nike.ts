@@ -113,7 +113,7 @@ async function fetchNikeApi(keyword: string): Promise<ScrapedItem[]> {
 // ── Approach 2: Playwright DOM fallback ───────────────────────────────────────
 async function fetchNikeDom(keyword: string): Promise<ScrapedItem[]> {
   const browser = await chromium.launch({
-    headless: true,
+    headless: false,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",

@@ -28,13 +28,13 @@ export interface PowerBuyScrapeResult {
 
 export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeResult> {
   const browser = await chromium.launch({
-    headless: true,
+    headless: false,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-blink-features=AutomationControlled",
       "--window-size=1366,768",
-      "--window-position=-8000,-8000", // off-screen but not hidden from Cloudflare checks
+      "--window-position=-8000,-8000",
       "--lang=th-TH",
     ],
     ignoreDefaultArgs: ["--enable-automation"],

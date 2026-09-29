@@ -57,7 +57,7 @@ async function fetchSonyApi(keyword: string): Promise<ScrapedItem[]> {
 // ── Approach 2: Playwright DOM fallback ───────────────────────────────────────
 async function fetchSonyDom(keyword: string): Promise<ScrapedItem[]> {
   const browser = await chromium.launch({
-    headless: true,
+    headless: false,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",

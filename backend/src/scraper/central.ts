@@ -20,7 +20,7 @@ export interface CentralScrapeResult {
 
 export async function scrapeCentral(keyword: string): Promise<CentralScrapeResult> {
   const browser = await chromium.launch({
-    headless: true,
+    headless: false,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",

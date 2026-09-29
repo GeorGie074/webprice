@@ -85,7 +85,7 @@ async function fetchAppleApi(keyword: string): Promise<ScrapedItem[]> {
 // ── Approach 2: Playwright on apple.com/th/search ─────────────────────────────
 async function fetchAppleDom(keyword: string): Promise<ScrapedItem[]> {
   const browser = await chromium.launch({
-    headless: true,
+    headless: false,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
