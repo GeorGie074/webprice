@@ -6,47 +6,78 @@ import {
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { chatApi } from "../../api";
-import { Product, COMING_SOON_PLATFORMS } from "../../types";
+import { Product } from "../../types";
 import { proxyImage } from "../../utils/imageUrl";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface ChatFilters {
+  category?: string;
+  maxPrice?: number;
+  minPrice?: number;
+  brands?: string[];
+  keywords?: string[];
+  compareMode?: boolean;
+  sortBy?: string;
+}
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   products?: Product[];
+  chips?: string[];      // dynamic suggestion chips after this message
   loading?: boolean;
 }
 
 // ── Suggestion chips ──────────────────────────────────────────────────────────
 
-const SUGGESTIONS = [
-  "โทรศัพท์ไม่เกิน 15,000 กล้องดี",
-  "หูฟัง Sony ราคาถูกสุด",
-  "แล็ปท็อปสำหรับทำงาน งบ 25,000",
-  "สกินแคร์แนะนำงบ 500 บาท",
+const INITIAL_SUGGESTIONS = [
+  "📱 โทรศัพท์ไม่เกิน 15,000 กล้องดี",
+  "🎧 หูฟัง Sony ราคาถูกสุด",
+  "💻 แล็ปท็อปสำหรับทำงาน งบ 25,000",
+  "🛒 สกินแคร์แนะนำงบ 500 บาท",
 ];
+
+const CHIPS_BY_CATEGORY: Record<string, string[]> = {
+  smartphone: ["เปรียบเทียบรุ่นที่ถูกกว่า", "iPhone vs Samsung", "🎧 หูฟัง True Wireless แนะนำ"],
+  laptop:     ["เปรียบเทียบ MacBook vs Windows", "แล็ปท็อปงบ 20,000–30,000", "🖱️ เมาส์ไร้สาย"],
+  tablet:     ["iPad vs Samsung Tab", "แท็บเล็ตสำหรับวาดรูป", "📱 โทรศัพท์ราคาดี"],
+  audio:      ["เปรียบเทียบ Sony vs Bose", "ลำโพง Bluetooth ราคาถูก", "💻 แล็ปท็อป"],
+  home:       ["เครื่องใช้ไฟฟ้าแนะนำ", "ของแต่งบ้านงบ 1,000", "🎧 หูฟัง"],
+  fashion:    ["รองเท้าไนกี้ราคาดี", "กระเป๋าแนะนำ", "💄 สกินแคร์"],
+  beauty:     ["ครีมบำรุงผิวงบ 500", "เซรั่มแนะนำ", "💄 เครื่องสำอาง"],
+  health:     ["อุปกรณ์ออกกำลังกาย", "วิตามินแนะนำ", "🏃 รองเท้าวิ่ง"],
+};
+
+const DEFAULT_CHIPS = ["📱 โทรศัพท์ราคาดี", "💻 แล็ปท็อปสำหรับทำงาน", "🎧 หูฟัง Sony"];
+
+function getChips(filters: ChatFilters, productCount: number): string[] {
+  if (productCount === 0) {
+    return ["ปรับงบประมาณ", "ลองค้นหาด้วยคำอื่น", "ดูสินค้าทั้งหมด"];
+  }
+  const cat = filters?.category ?? "";
+  return CHIPS_BY_CATEGORY[cat] ?? DEFAULT_CHIPS;
+}
 
 // ── Mini product card inside chat ─────────────────────────────────────────────
 
 function ChatProductCard({ product }: { product: Product }) {
-  const activePrices = product.prices.filter(
-    (p) => !COMING_SOON_PLATFORMS.includes(p.platform) && p.available !== false
-  );
+  // Use cheapest available price across all platforms (no COMING_SOON filtering here)
+  const available = product.prices.filter((p) => p.available !== false);
   const minPrice =
-    activePrices.length > 0
-      ? Math.min(...activePrices.map((p) => p.price))
+    available.length > 0
+      ? Math.min(...available.map((p) => p.price))
       : product.minPrice;
-  const cheapest = activePrices.find((p) => p.price === minPrice);
+  const cheapest = available.find((p) => p.price === minPrice) ?? product.prices[0];
 
   return (
     <Link
       to={`/product/${product._id}`}
-      className="flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-gray-100 hover:border-blue-200 hover:shadow-sm transition-all group"
+      className="flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-gray-100 hover:border-violet-200 hover:shadow-sm transition-all group"
     >
       <img
         src={proxyImage(product.image)}
-        alt={product.nameTh}
+        alt={product.nameTh || product.name}
         className="w-10 h-10 object-contain rounded-lg bg-gray-50 shrink-0"
         onError={(e) => {
           (e.target as HTMLImageElement).src = "/placeholder-product.svg";
@@ -54,15 +85,17 @@ function ChatProductCard({ product }: { product: Product }) {
         }}
       />
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-gray-800 truncate group-hover:text-blue-600 transition-colors">
-          {product.nameTh}
+        <p className="text-xs font-semibold text-gray-800 truncate group-hover:text-violet-600 transition-colors">
+          {product.nameTh || product.name}
         </p>
-        <p className="text-xs text-blue-600 font-bold">
+        <p className="text-xs text-violet-600 font-bold">
           ฿{minPrice.toLocaleString()}
-          <span className="text-gray-400 font-normal ml-1">· {cheapest?.platform}</span>
+          {cheapest?.platform && (
+            <span className="text-gray-400 font-normal ml-1">· {cheapest.platform}</span>
+          )}
         </p>
       </div>
-      <ChevronRight size={12} className="text-gray-300 group-hover:text-blue-400 shrink-0" />
+      <ChevronRight size={12} className="text-gray-300 group-hover:text-violet-400 shrink-0" />
     </Link>
   );
 }
@@ -75,18 +108,16 @@ export function ChatAssistant() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content: "สวัสดีครับ! ผมช่วยค้นหาและเปรียบราคาสินค้าให้ได้เลย\n\nลองถามได้เช่น \"โทรศัพท์ราคาไม่เกิน 15,000 กล้องดี\" หรือ \"เปรียบเทียบ Sony กับ Samsung\" ครับ 😊",
+      content: "สวัสดีครับ! 👋 ผม PriceBot ช่วยค้นหาและเปรียบราคาสินค้าจากทุกแพลตฟอร์มให้ได้เลย\n\nลองถามได้เช่น \"โทรศัพท์ราคาไม่เกิน 15,000 กล้องดี\" หรือ \"เปรียบเทียบ Sony กับ Samsung\" ครับ 😊",
     },
   ]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Focus input when opened
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
@@ -100,13 +131,19 @@ export function ChatAssistant() {
           .map((m) => ({ role: m.role, content: m.content }))
       ),
     onSuccess: (res) => {
-      const { message: aiMsg, products } = res.data as {
+      const { message: aiMsg, products, filters } = res.data as {
         message: string;
         products: Product[];
+        filters: ChatFilters;
       };
       setMessages((prev) => [
         ...prev.filter((m) => !m.loading),
-        { role: "assistant", content: aiMsg, products },
+        {
+          role: "assistant",
+          content: aiMsg,
+          products,
+          chips: getChips(filters ?? {}, products?.length ?? 0),
+        },
       ]);
     },
     onError: () => {
@@ -114,7 +151,8 @@ export function ChatAssistant() {
         ...prev.filter((m) => !m.loading),
         {
           role: "assistant",
-          content: "ขออภัยครับ เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง",
+          content: "ขออภัยครับ เกิดข้อผิดพลาดชั่วคราว กรุณาลองใหม่อีกครั้งนะครับ 🙏",
+          chips: DEFAULT_CHIPS,
         },
       ]);
     },
@@ -126,11 +164,7 @@ export function ChatAssistant() {
 
     const history = [...messages];
     const userMsg: ChatMessage = { role: "user", content: trimmed };
-    const loadingMsg: ChatMessage = {
-      role: "assistant",
-      content: "",
-      loading: true,
-    };
+    const loadingMsg: ChatMessage = { role: "assistant", content: "", loading: true };
 
     setMessages((prev) => [...prev, userMsg, loadingMsg]);
     setInput("");
@@ -154,7 +188,6 @@ export function ChatAssistant() {
         title="AI Shopping Assistant"
       >
         <MessageCircle size={24} />
-        {/* Pulse ring */}
         <span className="absolute inset-0 rounded-2xl ring-2 ring-purple-400 animate-ping opacity-30" />
       </button>
 
@@ -168,12 +201,12 @@ export function ChatAssistant() {
           }`}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 bg-gradient-to-r from-violet-600 to-purple-700 rounded-t-3xl">
+        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 bg-gradient-to-r from-violet-600 to-purple-700 rounded-t-3xl shrink-0">
           <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
             <Bot size={18} className="text-white" />
           </div>
           <div className="flex-1">
-            <p className="text-sm font-bold text-white">AI Shopping Assistant</p>
+            <p className="text-sm font-bold text-white">PriceBot</p>
             <p className="text-[10px] text-purple-200 flex items-center gap-1">
               <Sparkles size={9} />
               Powered by Cloudflare AI · Llama 3.3
@@ -202,14 +235,14 @@ export function ChatAssistant() {
                 {/* Bubble */}
                 {msg.loading ? (
                   <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-gray-100 flex items-center gap-2">
-                    <Loader2 size={14} className="text-purple-500 animate-spin" />
-                    <span className="text-xs text-gray-500">กำลังค้นหา...</span>
+                    <Loader2 size={14} className="text-violet-500 animate-spin" />
+                    <span className="text-xs text-gray-500">กำลังค้นหาราคา...</span>
                   </div>
                 ) : (
                   <div
                     className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap
                       ${msg.role === "user"
-                        ? "bg-purple-600 text-white rounded-tr-sm"
+                        ? "bg-violet-600 text-white rounded-tr-sm"
                         : "bg-gray-100 text-gray-800 rounded-tl-sm"
                       }`}
                   >
@@ -230,14 +263,31 @@ export function ChatAssistant() {
                     )}
                   </div>
                 )}
+
+                {/* Dynamic suggestion chips after assistant message */}
+                {msg.role === "assistant" && !msg.loading && msg.chips && msg.chips.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1 w-full">
+                    {msg.chips.map((chip) => (
+                      <button
+                        key={chip}
+                        onClick={() => sendMessage(chip)}
+                        disabled={mutation.isPending}
+                        className="text-[11px] bg-violet-50 text-violet-700 border border-violet-100 rounded-full px-2.5 py-1
+                          hover:bg-violet-100 hover:border-violet-200 disabled:opacity-40 transition-colors"
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ))}
 
-          {/* Suggestion chips — show only when no conversation yet */}
+          {/* Initial suggestion chips — show only before any conversation */}
           {messages.length === 1 && (
             <div className="flex flex-wrap gap-1.5 mt-1">
-              {SUGGESTIONS.map((s) => (
+              {INITIAL_SUGGESTIONS.map((s) => (
                 <button
                   key={s}
                   onClick={() => sendMessage(s)}
@@ -253,7 +303,7 @@ export function ChatAssistant() {
         </div>
 
         {/* Input */}
-        <div className="px-3 pb-3 pt-2 border-t border-gray-100">
+        <div className="px-3 pb-3 pt-2 border-t border-gray-100 shrink-0">
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input
               ref={inputRef}
@@ -262,14 +312,14 @@ export function ChatAssistant() {
               placeholder="ถามหาสินค้าหรือเปรียบราคา..."
               disabled={mutation.isPending}
               className="flex-1 text-sm px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200
-                focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/10
+                focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/10
                 disabled:opacity-50 transition-all"
             />
             <button
               type="submit"
               disabled={!input.trim() || mutation.isPending}
-              className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center
-                hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed
+              className="w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center
+                hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed
                 active:scale-95 transition-all shrink-0"
             >
               {mutation.isPending
@@ -280,7 +330,7 @@ export function ChatAssistant() {
           </form>
           <p className="text-[10px] text-gray-400 text-center mt-1.5 flex items-center justify-center gap-1">
             <ShoppingBag size={9} />
-            ค้นหาราคาจริงจากฐานข้อมูล PriceCompare
+            ราคาจริงจากฐานข้อมูล PriceCompare
           </p>
         </div>
       </div>

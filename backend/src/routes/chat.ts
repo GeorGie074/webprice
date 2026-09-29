@@ -52,6 +52,9 @@ router.post("/", async (req, res) => {
   }
 
   // ── 2. Query database with extracted filters ──────────────────────────────
+  // NOTE: keywords are NOT used as DB filters — Thai product names/tags rarely
+  // match English keyword extractions like "good camera". Instead, keywords are
+  // forwarded to the AI as preference hints so it can recommend from the DB list.
   const dbFilter: Record<string, unknown> = { hidden: { $ne: true } };
 
   if (filters.category) {
@@ -71,25 +74,23 @@ router.post("/", async (req, res) => {
     };
   }
 
-  if (filters.keywords && filters.keywords.length > 0) {
-    const keywordOr = filters.keywords.flatMap((kw) => [
-      { name:   { $regex: kw, $options: "i" } },
-      { nameTh: { $regex: kw, $options: "i" } },
-      { tags:   { $regex: kw, $options: "i" } },
-    ]);
-    dbFilter.$or = keywordOr;
-  }
-
   // Sort
   let sortField: Record<string, 1 | -1> = { minPrice: 1 }; // default: cheapest first
   if (filters.sortBy === "rating")  sortField = { "prices.0.rating": -1 };
   if (filters.sortBy === "reviews") sortField = { "prices.0.reviews": -1 };
   if (filters.sortBy === "price")   sortField = { minPrice: 1 };
 
-  const products = await Product.find(dbFilter)
+  let products = await Product.find(dbFilter)
     .sort(sortField)
-    .limit(6)
+    .limit(8)
     .lean();
+
+  // If brand filter + price returns no results, widen to category + price only
+  if (products.length === 0 && filters.brands && filters.brands.length > 0) {
+    const { brand: _removed, ...widerFilter } = dbFilter as any;
+    products = await Product.find(widerFilter).sort(sortField).limit(8).lean();
+    console.log(`[Chat] Widened query (dropped brand filter): ${products.length} results`);
+  }
 
   console.log(`[Chat] Found ${products.length} products for: "${message}"`);
 
