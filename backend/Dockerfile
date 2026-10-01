@@ -24,11 +24,11 @@ RUN npm run build
 
 EXPOSE 5000
 
-# xvfb-run starts a temporary virtual display (:99, 1366x768, 24-bit colour)
-# and makes $DISPLAY available to child processes.  Chrome then launches in
-# "headed" mode against this virtual screen — indistinguishable from a real
-# desktop to Cloudflare / anti-bot checks — while the container stays headless.
-# Start Xvfb virtual display as a background process, then launch the app.
-# Using Xvfb directly (instead of xvfb-run) avoids the xauth dependency.
+# Start Xvfb virtual display, then wait until it is actually ready before
+# launching the app.  We poll the X11 lock file (/tmp/.X99-lock) which Xvfb
+# creates only after the display socket is listening — far more reliable than
+# a fixed sleep that can race on slow container starts.
 # -ac disables X access control so Chrome can connect without a cookie file.
-CMD ["/bin/sh", "-c", "Xvfb :99 -screen 0 1366x768x24 -ac & sleep 1 && DISPLAY=:99 exec npm run start"]
+# Timeout guard (15 s) prevents the container from hanging forever if Xvfb
+# fails to start at all; the app's headless fallback in browser.ts handles that.
+CMD ["/bin/sh", "-c", "Xvfb :99 -screen 0 1366x768x24 -ac & timeout 15 sh -c 'until [ -f /tmp/.X99-lock ]; do sleep 0.1; done' && echo 'Xvfb ready' && DISPLAY=:99 exec npm run start"]
