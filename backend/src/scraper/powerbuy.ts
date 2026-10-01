@@ -66,6 +66,31 @@ function relevanceScore(productName: string, query: string): number {
   return matches / qTokens.length;
 }
 
+// ── Accessory guard ───────────────────────────────────────────────────────────
+//
+// Power Buy mixes accessories (cases, screen films, cables) into device searches
+// because the accessory name contains the device name (e.g. "เคสสำหรับ iPhone 17").
+// When the query is for a device (not an accessory), skip accessory-looking items.
+//
+const ACCESSORY_STARTS_TH = ["ฟิล์ม", "เคส", "สาย", "ที่ชาร์จ", "แท่นชาร์จ", "กระเป๋า", "ขาตั้ง", "จุกอุด"];
+const ACCESSORY_STARTS_EN = ["film ", "case ", "cover ", "screen ", "cable ", "charger ", "protector ", "stand ", "holder ", "skin "];
+
+function isAccessory(productName: string): boolean {
+  const n  = productName.toLowerCase();
+  return (
+    ACCESSORY_STARTS_TH.some((p) => productName.startsWith(p)) ||
+    ACCESSORY_STARTS_EN.some((p) => n.startsWith(p))
+  );
+}
+
+function queryIsForAccessory(query: string): boolean {
+  const q = query.toLowerCase();
+  return (
+    ACCESSORY_STARTS_TH.some((p) => q.includes(p.trim())) ||
+    ACCESSORY_STARTS_EN.some((p) => q.includes(p.trim()))
+  );
+}
+
 export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeResult> {
   let browser: import("playwright").Browser | undefined;
   let context: import("playwright").BrowserContext | undefined;
@@ -212,21 +237,44 @@ export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeRes
         });
       }
 
-      // Require at least 50% of query tokens to match; sort best-match first
-      const minScore = 0.5;
-      const filtered = pool
-        .filter((p) => p._score >= minScore)
-        .sort((a, b) => b._score - a._score || a.price - b.price);
+      // ── Step 1: accessory guard ───────────────────────────────────────────
+      // When the query is for a device, strip out cases/films/cables that
+      // Power Buy bundles into the results because they mention the device name.
+      const searchingForAccessory = queryIsForAccessory(keyword);
+      const nonAccessory = searchingForAccessory
+        ? pool
+        : pool.filter((p) => !isAccessory(p.name));
 
-      if (filtered.length === 0 && pool.length > 0) {
-        // All items failed the relevance threshold — fall back to top 5 by
-        // Power Buy's own ranking so we don't silently return nothing.
-        console.log(`[PowerBuy] All ${pool.length} items below relevance threshold — showing top 5 unfiltered`);
-        results.push(...pool.slice(0, 5).map(({ _score: _s, ...item }) => item));
+      // ── Step 2: relevance threshold ───────────────────────────────────────
+      const minScore = 0.5;
+      const relevant = nonAccessory.filter((p) => p._score >= minScore);
+
+      // ── Step 3: de-duplicate by name (colour/variant differences kept) ────
+      // Power Buy sometimes lists the same SKU multiple times (different
+      // promotion slots). Deduplicate on normalised name + price.
+      const seen = new Set<string>();
+      const deduped = relevant.filter((p) => {
+        const key = `${p.name.toLowerCase().replace(/\s+/g, "")}::${p.price}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      // ── Step 4: sort best-match first, then cheapest ──────────────────────
+      deduped.sort((a, b) => b._score - a._score || a.price - b.price);
+
+      if (deduped.length === 0 && pool.length > 0) {
+        // All items filtered — fall back to top 5 unfiltered so we never
+        // silently return nothing for a valid keyword.
+        console.log(`[PowerBuy] All ${pool.length} items filtered — showing top 5 unfiltered fallback`);
+        const fallback = pool.slice(0, 5);
+        results.push(...fallback.map(({ _score: _s, ...item }) => item));
       } else {
-        // Keep top 10 relevant results
-        results.push(...filtered.slice(0, 10).map(({ _score: _s, ...item }) => item));
-        console.log(`[PowerBuy] Relevance filter: ${filtered.length}/${pool.length} passed (score≥${minScore}), showing top ${results.length}`);
+        results.push(...deduped.slice(0, 10).map(({ _score: _s, ...item }) => item));
+        console.log(
+          `[PowerBuy] Filter: ${pool.length} raw → ${nonAccessory.length} non-accessory ` +
+          `→ ${relevant.length} relevant → ${deduped.length} deduped → showing ${results.length}`
+        );
       }
     }
 
