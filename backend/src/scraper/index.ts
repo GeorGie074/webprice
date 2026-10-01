@@ -607,6 +607,14 @@ export async function updateProductPrices(
       const jibFinal      = validateMatch(jibMatch,       "JIB",          pn, cat, jibOriginal);
       // Extract colour variants for JIB (uses raw jibItems before bestMatch filtering)
       const jibVariants   = jibFinal ? extractColorVariants(jibItems, jibFinal) : [];
+      // Debug: log raw JIB item names so we can confirm the " - Colour" pattern exists
+      if (hasJIBEntry && jibItems.length > 0) {
+        console.log(`[JIB variants] raw items for "${product.name}" (${jibItems.length} total):`);
+        jibItems.slice(0, 10).forEach((it, i) =>
+          console.log(`  [${i}] ฿${it.price} "${it.name}"`)
+        );
+        console.log(`[JIB variants] jibFinal="${jibFinal?.name ?? "null"}" → ${jibVariants.length} variants found`);
+      }
       const samsungFinal  = validateMatch(samsungMatch,   "Samsung Shop", pn, cat, samsungOriginal);
       const sonyFinal     = validateMatch(sonyMatch,      "Sony Store",   pn, cat, sonyOriginal);
       const dysonFinal    = validateMatch(dysonMatch,     "Dyson Store",        pn, cat, dysonOriginal);
