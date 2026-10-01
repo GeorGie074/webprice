@@ -20,6 +20,17 @@ export interface ICoupon {
   afterPrice:  number;  // Final price after coupon applied
 }
 
+/**
+ * One colour / variant option scraped from a platform.
+ * Currently populated for JIB (items follow "Product Name - Colour" pattern).
+ */
+export interface IColorVariant {
+  color:   string;
+  inStock: boolean | null;
+  url:     string;
+  price:   number;
+}
+
 export interface IPlatformPrice {
   platform: string;
   price: number;
@@ -38,6 +49,8 @@ export interface IPlatformPrice {
    * `undefined` = never been scraped yet (seed default — treated as available).
    */
   available?: boolean;
+  /** Colour variants — populated when the platform lists each colour as a separate item */
+  colorVariants?: IColorVariant[];
 }
 
 /**
@@ -94,6 +107,16 @@ const couponSchema = new mongoose.Schema<ICoupon>(
   { _id: false }
 );
 
+const variantSchema = new mongoose.Schema<IColorVariant>(
+  {
+    color:   { type: String,  required: true },
+    inStock: { type: Boolean, default: null  },
+    url:     { type: String,  required: true },
+    price:   { type: Number,  required: true },
+  },
+  { _id: false }
+);
+
 const platformPriceSchema = new mongoose.Schema<IPlatformPrice>({
   platform:      { type: String,  required: true },
   price:         { type: Number,  required: true },
@@ -105,6 +128,7 @@ const platformPriceSchema = new mongoose.Schema<IPlatformPrice>({
   reviews:       { type: Number,  default: 0     },
   coupon:        { type: couponSchema, default: undefined },
   available:     { type: Boolean, default: undefined }, // undefined = not yet scraped
+  colorVariants: { type: [variantSchema], default: undefined },
 });
 
 const productSchema = new mongoose.Schema<IProduct>(

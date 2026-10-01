@@ -6,6 +6,14 @@ export interface PlatformCoupon {
   afterPrice:  number;  // final price after coupon applied
 }
 
+/** One colour option scraped from a platform (e.g. JIB "Product - Colour" listings) */
+export interface ColorVariant {
+  color:   string;
+  inStock: boolean | null;
+  url:     string;
+  price:   number;
+}
+
 export interface PlatformPrice {
   platform: string;
   price: number;
@@ -19,6 +27,8 @@ export interface PlatformPrice {
   coupon?: PlatformCoupon;
   /** false = scraper ran but product not found on this platform → hidden from comparison */
   available?: boolean;
+  /** Colour variants — populated when platform lists each colour separately */
+  colorVariants?: ColorVariant[];
 }
 
 export interface PriceSnapshot {

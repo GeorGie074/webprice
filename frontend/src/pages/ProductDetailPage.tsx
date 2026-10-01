@@ -401,6 +401,11 @@ export default function ProductDetailPage() {
                           <Clock size={9} /> เร็วๆ นี้
                         </span>
                       )}
+                      {!isCS && p.colorVariants && p.colorVariants.length > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full border border-purple-100">
+                          🎨 {p.colorVariants.length} สี
+                        </span>
+                      )}
                     </div>
 
                     {!isCS && (
@@ -420,6 +425,28 @@ export default function ProductDetailPage() {
                           : p.inStock
                           ? <span className="text-gray-500">มีสินค้า</span>
                           : <span className="text-red-400">หมด</span>}
+                      </div>
+                    )}
+
+                    {/* Colour variant pills — shown when platform lists each colour separately */}
+                    {!isCS && p.colorVariants && p.colorVariants.length > 0 && (
+                      <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+                        {p.colorVariants.map((v, ci) => (
+                          <a
+                            key={ci}
+                            href={v.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`${v.color}${v.inStock === false ? " (สินค้าหมด)" : ""} — ฿${v.price.toLocaleString()}`}
+                            className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-all ${
+                              v.inStock === false
+                                ? "bg-gray-50 border-gray-200 text-gray-400 line-through"
+                                : "bg-white border-gray-200 text-gray-700 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50"
+                            }`}
+                          >
+                            {v.color}
+                          </a>
+                        ))}
                       </div>
                     )}
                   </div>

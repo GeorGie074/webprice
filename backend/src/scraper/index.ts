@@ -1,4 +1,4 @@
-import Product, { IPlatformPrice } from "../models/Product.js";
+import Product, { IPlatformPrice, IColorVariant } from "../models/Product.js";
 import Alert from "../models/Alert.js";
 import User from "../models/User.js";
 import { scrapeShopee, ScrapedItem } from "./shopee.js";
@@ -223,6 +223,55 @@ function bestMatch(
     `score=${scored[0].score}/${keywords.length} ฿${scored[0].item.price}`
   );
   return scored[0].item;
+}
+
+// ─── Colour-variant extractor ────────────────────────────────────────────────
+//
+// JIB (and some other platforms) list each colour of a product as a separate
+// search result item named "Product Name - Colour" (e.g. "Apple iPhone 17
+// 256GB - Black").  After bestMatch picks the representative item we inspect
+// ALL raw scraped items to collect the full colour roster for that model.
+//
+// Algorithm:
+//  1. Confirm the representative name contains a " - Colour" suffix.
+//  2. Derive the shared base name (everything before the last " - ").
+//  3. Collect every item whose base name matches (case-insensitive exact match).
+//  4. Return [] if fewer than 2 distinct colours are found
+//     (single-colour products don't need a variant display).
+//
+function extractColorVariants(
+  rawItems: ScrapedItem[],
+  representative: ScrapedItem
+): IColorVariant[] {
+  const lastDash = representative.name.lastIndexOf(" - ");
+  if (lastDash === -1) return []; // no " - Colour" suffix
+
+  const baseName = representative.name.slice(0, lastDash).toLowerCase().trim();
+
+  const variants: IColorVariant[] = [];
+  const seen = new Set<string>();
+
+  for (const item of rawItems) {
+    const d = item.name.lastIndexOf(" - ");
+    if (d === -1) continue;
+    const itemBase = item.name.slice(0, d).toLowerCase().trim();
+    if (itemBase !== baseName) continue;
+
+    const color = item.name.slice(d + 3).trim();
+    const colorKey = color.toLowerCase();
+    if (!color || seen.has(colorKey)) continue;
+    seen.add(colorKey);
+
+    variants.push({
+      color,
+      inStock: item.inStock ?? null,
+      url:     item.url,
+      price:   item.price,
+    });
+  }
+
+  // Only meaningful when there are 2+ colours
+  return variants.length >= 2 ? variants : [];
 }
 
 export interface ScrapeResult {
@@ -556,6 +605,8 @@ export async function updateProductPrices(
       const powerBuyFinal = validateMatch(powerBuyMatch,  "Power Buy",    pn, cat, powerBuyOriginal);
       const studio7Final  = validateMatch(studio7Match,   "Studio 7",     pn, cat, studio7Original);
       const jibFinal      = validateMatch(jibMatch,       "JIB",          pn, cat, jibOriginal);
+      // Extract colour variants for JIB (uses raw jibItems before bestMatch filtering)
+      const jibVariants   = jibFinal ? extractColorVariants(jibItems, jibFinal) : [];
       const samsungFinal  = validateMatch(samsungMatch,   "Samsung Shop", pn, cat, samsungOriginal);
       const sonyFinal     = validateMatch(sonyMatch,      "Sony Store",   pn, cat, sonyOriginal);
       const dysonFinal    = validateMatch(dysonMatch,     "Dyson Store",        pn, cat, dysonOriginal);
@@ -646,8 +697,16 @@ export async function updateProductPrices(
         if (p.platform === "JIB") {
           if (jibFinal) {
             result.jib = { price: jibFinal.price, url: jibFinal.url };
-            return { ...base, price: jibFinal.price, url: jibFinal.url,
-                     inStock: jibFinal.inStock, available: true };
+            return {
+              ...base,
+              price:    jibFinal.price,
+              url:      jibFinal.url,
+              inStock:  jibFinal.inStock,
+              available: true,
+              // Only store colorVariants when we found multiple colours; otherwise
+              // clear any stale variants from a previous scrape run.
+              colorVariants: jibVariants.length > 0 ? jibVariants : undefined,
+            };
           }
           // confirmed=true: JIB page loaded fine but product not found → mark unavailable.
           // This removes seeded placeholder prices (e.g. vivo/OnePlus that JIB doesn't carry)
