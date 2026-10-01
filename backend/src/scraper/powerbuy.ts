@@ -26,6 +26,46 @@ export interface PowerBuyScrapeResult {
   confirmed: boolean; // true = Power Buy page loaded OK; 0 items = genuinely not sold there
 }
 
+// ── Relevance scoring ─────────────────────────────────────────────────────────
+//
+// Power Buy's internal product names often differ from consumer marketing names
+// (e.g. "iPad A16 Gen 11" instead of "iPad Air 6"). This scorer lets us rank
+// and filter results so only items that actually match the search keyword are
+// shown, removing noise from unrelated products Power Buy bundles into results.
+//
+// Algorithm:
+//  1. Tokenise both query and product name at alphanumeric boundaries
+//     ("air6" → ["air","6"], "iphone17" → ["iphone","17"]).
+//  2. For numeric tokens require a whole-number match (so "6" won't match "16").
+//  3. Return the fraction of query tokens found in the product name.
+//
+function relevanceScore(productName: string, query: string): number {
+  const tokenise = (s: string): string[] =>
+    s.toLowerCase()
+      .replace(/([a-z])(\d)/g, "$1 $2")   // split letter-digit: "air6" → "air 6"
+      .replace(/(\d)([a-z])/g, "$1 $2")   // split digit-letter: "6th" → "6 th"
+      .split(/[\s\-_/()+,]+/)
+      .filter((t) => t.length >= 2);
+
+  const qTokens = tokenise(query);
+  if (qTokens.length === 0) return 1;
+
+  const normName = productName.toLowerCase()
+    .replace(/([a-z])(\d)/g, "$1 $2")
+    .replace(/(\d)([a-z])/g, "$1 $2");
+
+  let matches = 0;
+  for (const t of qTokens) {
+    if (/^\d+$/.test(t)) {
+      // Whole-number: "6" must not be inside "16" or "60"
+      if (new RegExp(`(?<![\\d])${t}(?![\\d])`).test(normName)) matches++;
+    } else {
+      if (normName.includes(t)) matches++;
+    }
+  }
+  return matches / qTokens.length;
+}
+
 export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeResult> {
   let browser: import("playwright").Browser | undefined;
   let context: import("playwright").BrowserContext | undefined;
@@ -143,29 +183,50 @@ export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeRes
       const toPrice = (v: any) =>
         Math.round(parseFloat(String(v ?? "0").replace(/,/g, "")) || 0);
 
-      for (const item of capturedProducts.slice(0, 50)) {
+      // Parse a larger pool first, then score + filter for relevance.
+      // Power Buy returns its own ranking order which may include tangentially
+      // related products; we re-rank by how well the name matches the keyword.
+      const pool: Array<ScrapedItem & { _score: number }> = [];
+
+      for (const item of capturedProducts.slice(0, 40)) {
         const name  = item.name ?? "";
-        // minPrice/maxPrice are strings like "49,700.00" — strip commas first
         const price = toPrice(item.minPrice) || toPrice(item.maxPrice) ||
                       Math.round(item.priceSort ?? 0);
         if (!name || !price) continue;
 
-        // Power Buy product URL format: /th/product/{slugname}
-        // The prCode is already embedded inside the slug (e.g. "APPLE-iPhone-16-128GB-White-301010")
-        // so appending it again as /prCode creates a 404.
         const slug = item.slugname ?? "";
         const url  = slug
           ? `https://www.powerbuy.co.th/th/product/${slug}`
           : searchUrl;
 
-        results.push({
+        const score = relevanceScore(name, keyword);
+
+        pool.push({
           name,
           price,
           url,
           inStock: item.instock !== false && (item.stockAmount ?? 1) > 0,
           rating:  parseFloat(item.rating       ?? "0") || 0,
           reviews: parseInt(item.reviewCount ?? item.ratingCount ?? "0") || 0,
+          _score:  score,
         });
+      }
+
+      // Require at least 50% of query tokens to match; sort best-match first
+      const minScore = 0.5;
+      const filtered = pool
+        .filter((p) => p._score >= minScore)
+        .sort((a, b) => b._score - a._score || a.price - b.price);
+
+      if (filtered.length === 0 && pool.length > 0) {
+        // All items failed the relevance threshold — fall back to top 5 by
+        // Power Buy's own ranking so we don't silently return nothing.
+        console.log(`[PowerBuy] All ${pool.length} items below relevance threshold — showing top 5 unfiltered`);
+        results.push(...pool.slice(0, 5).map(({ _score: _s, ...item }) => item));
+      } else {
+        // Keep top 10 relevant results
+        results.push(...filtered.slice(0, 10).map(({ _score: _s, ...item }) => item));
+        console.log(`[PowerBuy] Relevance filter: ${filtered.length}/${pool.length} passed (score≥${minScore}), showing top ${results.length}`);
       }
     }
 
