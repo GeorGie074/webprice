@@ -1,5 +1,11 @@
 import { chromium } from "playwright";
+import { load } from "cheerio";
 import type { ScrapedItem } from "./shopee.js";
+
+// Name must contain a real Apple product keyword — rejects UI labels like
+// "สี เลือกสีโปรดที่คุณชื่นชอบ" or "พื้นที่จัดเก็บข้อมูล..."
+const APPLE_PRODUCT_RE =
+  /iphone|ipad|macbook|mac\s*(mini|pro|air|studio)|imac|airpods?|apple\s*watch|apple\s*tv|apple\s*pencil/i;
 
 /**
  * Scrape Apple Store Thailand (apple.com/th).
@@ -33,6 +39,99 @@ function shopCategoryUrl(keyword: string): string {
   if (/apple.*watch|watch/.test(kl)) return `${SHOP_BASE}/buy-watch/`;
   if (/apple.*pencil/.test(kl)) return `${SHOP_BASE}/buy-ipad/`;
   return `${SHOP_BASE}/`;
+}
+
+// ── Shared HTML parser (used by both ScraperAPI and Playwright paths) ─────────
+//
+// Apple's buy pages have two layouts:
+//  A) Product listing  (/buy-iphone/)      — multiple product cards with names+prices
+//  B) Configurator     (/buy-iphone/X/)    — single product with colour/storage selectors
+//
+// Strategy for (B): grab the page heading as product name + the first price
+// that passes the product-name filter.
+//
+function parseAppleHtml(html: string, fallbackUrl: string): ScrapedItem[] {
+  const $ = load(html);
+  const results: ScrapedItem[] = [];
+
+  // ── Strategy A: product tile cards ───────────────────────────────────────────
+  const cardSels = [
+    '[data-autom="sku-list-item"]',
+    '[data-autom*="product-tile"]',
+    '.rf-bfe-product',
+    '[class*="rf-bfe-tile"]',
+    '[class*="product-card"]',
+    '.as-productrow',
+  ];
+  for (const sel of cardSels) {
+    $(sel).each((_, card) => {
+      const nameEl  = $(card).find('[data-autom*="name"], .rf-bfe-productname, h2, h3, h4').first();
+      const priceEl = $(card).find('[data-autom*="price"], .rf-bfe-pricepoint, [class*="price"]').first();
+      const linkEl  = $(card).find("a[href]").first();
+
+      const name     = nameEl.text().trim().replace(/\s+/g, " ");
+      const price    = parseInt(priceEl.text().replace(/[^0-9]/g, ""), 10) || 0;
+      const rawHref  = linkEl.attr("href") ?? "";
+      const url      = rawHref.startsWith("http") ? rawHref
+                     : rawHref ? `${BASE_URL}${rawHref}` : fallbackUrl;
+
+      if (name && price > 0 && APPLE_PRODUCT_RE.test(name)) {
+        results.push({ name, price, url, inStock: null, rating: 0, reviews: 0 });
+      }
+    });
+    if (results.length > 0) break;
+  }
+
+  // ── Strategy B: configurator page — heading + hero price ─────────────────────
+  if (results.length === 0) {
+    const heading = $("h1, [data-autom='product-name'], .rc-hero-title")
+      .first().text().trim().replace(/\s+/g, " ");
+
+    // Find the first element that has a ฿ price AND is NOT a UI label
+    let heroPrice = 0;
+    $("*").each((_, el) => {
+      if (heroPrice > 0) return false; // stop iterating
+      const text = $(el).children().length === 0 ? $(el).text() : ""; // leaf nodes only
+      if (text.includes("฿")) {
+        const p = parseInt(text.replace(/[^0-9]/g, ""), 10);
+        if (p >= 5_000) { heroPrice = p; }
+      }
+    });
+
+    if (heading && heroPrice > 0 && APPLE_PRODUCT_RE.test(heading)) {
+      results.push({
+        name:    heading,
+        price:   heroPrice,
+        url:     fallbackUrl,
+        inStock: null,
+        rating:  0,
+        reviews: 0,
+      });
+      console.log(`[Apple] Configurator page — extracted "${heading}" ฿${heroPrice}`);
+    }
+  }
+
+  return results;
+}
+
+// ── Approach 0: ScraperAPI (preferred on Railway — bypasses JS restrictions) ───
+async function fetchAppleViaScraperAPI(
+  keyword: string,
+  apiKey: string
+): Promise<ScrapedItem[]> {
+  const targetUrl  = shopCategoryUrl(keyword);
+  const scraperUrl =
+    `http://api.scraperapi.com/?api_key=${apiKey}` +
+    `&url=${encodeURIComponent(targetUrl)}&render=true&country_code=th`;
+
+  console.log(`[Apple] Fetching via ScraperAPI: "${targetUrl}"...`);
+  const res = await fetch(scraperUrl, { signal: AbortSignal.timeout(60_000) });
+  if (!res.ok) throw new Error(`ScraperAPI HTTP ${res.status}`);
+  const html = await res.text();
+
+  const items = parseAppleHtml(html, targetUrl);
+  if (items.length === 0) throw new Error("ScraperAPI: no Apple products parsed from HTML");
+  return items;
 }
 
 // ── Approach 1: Apple Thailand shop search API (direct fetch) ─────────────────
@@ -214,55 +313,12 @@ async function fetchAppleDom(keyword: string): Promise<ScrapedItem[]> {
       }
     }
 
-    // ── DOM fallback — Apple shop product tile selectors ─────────────────────
+    // ── DOM fallback — parse full page HTML with shared Cheerio parser ──────────
     if (results.length === 0) {
-      console.log("[Apple] JSON-LD empty — trying DOM...");
-
-      const domItems = await page.evaluate(() => {
-        // Apple's Buy Flow Engine (BFE) classes + broader fallback
-        const cards = Array.from(document.querySelectorAll(
-          ".rf-bfe-product, [class*='rf-bfe'], " +
-          "[data-analytics-title], " +
-          ".rc-product-card, [class*='product-card'], " +
-          ".as-productrow, li[class*='product'], " +
-          "[class*='product-tile'], [class*='ProductTile']"
-        )).filter((el) => {
-          const text = (el as HTMLElement).innerText || "";
-          return text.includes("฿") || text.includes("บาท");
-        });
-
-        return cards.slice(0, 15).map((card) => {
-          const nameEl  = card.querySelector(
-            ".rf-bfe-productname, [class*='product-name'], " +
-            "[class*='product-title'], h2, h3, h4, [data-analytics-title]"
-          );
-          const priceEl = card.querySelector(
-            ".rf-bfe-finalPrice, .rf-bfe-pricepoint-currentPrice, " +
-            "[class*='price'], [class*='Price'], " +
-            "[class*='currentPrice'], [class*='current-price']"
-          );
-          const linkEl  = card.querySelector("a[href]") as HTMLAnchorElement | null;
-
-          const name     = (nameEl?.textContent ?? card.getAttribute("data-analytics-title") ?? "").trim().replace(/\s+/g, " ");
-          const priceStr = (priceEl?.textContent ?? "").replace(/[^0-9]/g, "");
-          const price    = parseInt(priceStr, 10) || 0;
-          const url      = linkEl?.href ?? "";
-
-          return { name, price, url };
-        });
-      }).catch(() => []);
-
-      for (const item of domItems) {
-        if (item.name && item.price > 0)
-          results.push({
-            name:    item.name,
-            price:   item.price,
-            url:     item.url || targetUrl,
-            inStock: null,
-            rating:  0,
-            reviews: 0,
-          });
-      }
+      console.log("[Apple] JSON-LD empty — trying DOM (Cheerio)...");
+      const html = await page.content().catch(() => "");
+      const domItems = parseAppleHtml(html, targetUrl);
+      results.push(...domItems);
 
       if (results.length === 0) {
         const title = await page.title().catch(() => "?");
@@ -283,21 +339,35 @@ async function fetchAppleDom(keyword: string): Promise<ScrapedItem[]> {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function scrapeApple(keyword: string): Promise<ScrapedItem[]> {
-  if (!/iphone|ipad|macbook|mac\s*(mini|pro|air|studio)|imac|airpod|apple\s*watch|apple\s*pencil|apple\s*tv/i.test(keyword)) {
+  if (!APPLE_PRODUCT_RE.test(keyword)) {
     console.log(`[Apple] Skipping "${keyword}" — not an Apple product`);
     return [];
   }
 
+  // 1. Direct shop search API (fastest, no browser needed)
   const apiResults = await fetchAppleApi(keyword).catch((e) => {
     console.warn(`[Apple] API fetch failed ("${keyword}"):`, e.message);
     return [] as ScrapedItem[];
   });
-
   if (apiResults.length > 0) {
     console.log(`[Apple] "${keyword}" → ${apiResults.length} results (API)`);
     return apiResults;
   }
 
+  // 2. ScraperAPI (reliable on Railway — rendered HTML, no CAPTCHA)
+  const scraperApiKey = process.env.SCRAPERAPI_KEY;
+  if (scraperApiKey) {
+    const scraperResults = await fetchAppleViaScraperAPI(keyword, scraperApiKey).catch((e) => {
+      console.warn(`[Apple] ScraperAPI failed ("${keyword}"):`, e.message);
+      return [] as ScrapedItem[];
+    });
+    if (scraperResults.length > 0) {
+      console.log(`[Apple] "${keyword}" → ${scraperResults.length} results (ScraperAPI)`);
+      return scraperResults;
+    }
+  }
+
+  // 3. Playwright (local dev fallback)
   const domResults = await fetchAppleDom(keyword).catch((err) => {
     console.error(`[Apple] DOM fallback failed ("${keyword}"):`, (err as Error).message);
     return [] as ScrapedItem[];
