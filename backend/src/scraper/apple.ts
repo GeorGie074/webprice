@@ -84,8 +84,10 @@ function parseAppleHtml(html: string, fallbackUrl: string): ScrapedItem[] {
 
   // ── Strategy B: configurator page — heading + hero price ─────────────────────
   if (results.length === 0) {
-    const heading = $("h1, [data-autom='product-name'], .rc-hero-title")
+    const rawHeading = $("h1, [data-autom='product-name'], .rc-hero-title")
       .first().text().trim().replace(/\s+/g, " ");
+    // Strip Thai "ซื้อ " / "Buy " prefix that Apple puts on shop headings
+    const heading = rawHeading.replace(/^(ซื้อ\s+|buy\s+)/i, "").trim();
 
     // Find the first element that has a ฿ price AND is NOT a UI label
     let heroPrice = 0;
