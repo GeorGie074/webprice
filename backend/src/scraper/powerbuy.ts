@@ -27,38 +27,53 @@ export interface PowerBuyScrapeResult {
 }
 
 export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeResult> {
-  const browser = await chromium.launch({
-    headless: false,
-    args: [
+  let browser: import("playwright").Browser | undefined;
+  let context: import("playwright").BrowserContext | undefined;
+  const results: ScrapedItem[] = [];
+
+  try {
+    // ── Browser launch — headed first, headless fallback if no X display ────
+    const LAUNCH_ARGS = [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-blink-features=AutomationControlled",
       "--window-size=1366,768",
-      "--window-position=-8000,-8000",
       "--lang=th-TH",
-    ],
-    ignoreDefaultArgs: ["--enable-automation"],
-  });
+    ];
+    try {
+      browser = await chromium.launch({
+        headless: false,
+        args: [...LAUNCH_ARGS, "--window-position=-8000,-8000"],
+        ignoreDefaultArgs: ["--enable-automation"],
+      }) as unknown as import("playwright").Browser;
+      console.log("[PowerBuy] Browser launched (headed)");
+    } catch {
+      console.warn("[PowerBuy] Headed mode failed — falling back to headless");
+      browser = await chromium.launch({
+        headless: true,
+        args: LAUNCH_ARGS,
+        ignoreDefaultArgs: ["--enable-automation"],
+      }) as unknown as import("playwright").Browser;
+      console.log("[PowerBuy] Browser launched (headless fallback)");
+    }
 
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale: "th-TH",
-    timezoneId: "Asia/Bangkok",
-    viewport: { width: 1366, height: 768 },
-    extraHTTPHeaders: {
-      "accept-language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7",
-      "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"Windows"',
-    },
-  });
+    context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      locale: "th-TH",
+      timezoneId: "Asia/Bangkok",
+      viewport: { width: 1366, height: 768 },
+      extraHTTPHeaders: {
+        "accept-language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7",
+        "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+      },
+    });
 
-  const page    = await context.newPage();
-  const results: ScrapedItem[] = [];
+    const page = await context.newPage();
 
-  try {
     // ── 1. Homepage warm-up ─────────────────────────────────────────────────
     console.log("[PowerBuy] Visiting homepage...");
     await page.goto("https://www.powerbuy.co.th/th", {
@@ -221,8 +236,8 @@ export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeRes
     console.error(`[PowerBuy] Error "${keyword}":`, (err as Error).message);
     return { items: results, confirmed: false };
   } finally {
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
     console.log("[PowerBuy] Browser closed");
   }
 }

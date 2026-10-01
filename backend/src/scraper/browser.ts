@@ -25,12 +25,37 @@ if (!needsHeadless) BASE_ARGS.push("--window-position=-8000,-8000");
 /** Get (or launch) the shared browser singleton. */
 export async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.isConnected()) {
-    browser = await chromium.launch({
-      headless: needsHeadless,
-      args: BASE_ARGS,
-      ignoreDefaultArgs: ["--enable-automation"],
-    });
-    console.log(`🌐 Browser launched (${needsHeadless ? "headless" : "headed"})`);
+    if (needsHeadless) {
+      // No X display available — run headless directly
+      browser = await chromium.launch({
+        headless: true,
+        args: BASE_ARGS,
+        ignoreDefaultArgs: ["--enable-automation"],
+      });
+      console.log("🌐 Browser launched (headless)");
+    } else {
+      // $DISPLAY is set — try headed for better bot-evasion;
+      // fall back to headless if Xvfb crashed or the display is gone.
+      try {
+        browser = await chromium.launch({
+          headless: false,
+          args: BASE_ARGS,
+          ignoreDefaultArgs: ["--enable-automation"],
+        });
+        console.log("🌐 Browser launched (headed)");
+      } catch (headedErr) {
+        console.warn(
+          "⚠️ Headed browser failed — falling back to headless:",
+          (headedErr as Error).message
+        );
+        browser = await chromium.launch({
+          headless: true,
+          args: BASE_ARGS,
+          ignoreDefaultArgs: ["--enable-automation"],
+        });
+        console.log("🌐 Browser launched (headless fallback)");
+      }
+    }
   }
   return browser;
 }
