@@ -12,12 +12,15 @@ router.get("/progress", protect, adminOnly, (_req, res) => {
 
 // ─── POST /api/scraper/update ─────────────────────────────────────────────────
 // Trigger a manual price update (admin only).
-// Body: { productId?: string }  — omit to update ALL products
+// Body: { productId?: string, nameFilter?: string }
+//   • productId   — scrape a single product by MongoDB _id
+//   • nameFilter  — partial case-insensitive name match, e.g. "iPhone 17 256"
+//   • (both omitted) — scrape ALL products
 router.post("/update", protect, adminOnly, async (req, res) => {
-  const { productId } = req.body as { productId?: string };
+  const { productId, nameFilter } = req.body as { productId?: string; nameFilter?: string };
 
   // Run scraping in the background (don't block the HTTP response)
-  updateProductPrices(productId)
+  updateProductPrices(productId, nameFilter)
     .then((report) => {
       const ok = report.filter((r) => r.success).length;
       console.log(`🎉 Manual scrape done: ${ok}/${report.length} products updated`);
@@ -27,6 +30,8 @@ router.post("/update", protect, adminOnly, async (req, res) => {
   res.json({
     message: productId
       ? `🔍 Scraping started for product ${productId}`
+      : nameFilter
+      ? `🔍 Scraping products matching "${nameFilter}"`
       : "🔍 Scraping all products in background",
     note: "Check server logs for progress. Prices update in DB as each product finishes.",
   });
