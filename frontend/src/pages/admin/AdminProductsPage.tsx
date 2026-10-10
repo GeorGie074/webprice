@@ -195,11 +195,25 @@ export default function AdminProductsPage() {
       const newId: string = res.data._id;
       setAddingStatus("scraping");
       await scraperApi.updateOne(newId);
-      setTimeout(async () => {
-        await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-        setAddingStatus("done");
-        setTimeout(() => { setShowModal(false); setForm(EMPTY_FORM); setAddingStatus("idle"); }, 1_500);
-      }, 18_000);
+
+      // Poll /api/scraper/progress until scraper finishes (isRunning: false)
+      // instead of using a fixed timeout — scraping can take 30–90s.
+      const waitForScraper = async () => {
+        const MAX_WAIT = 120_000; // 2 minutes hard cap
+        const POLL_MS  = 3_000;
+        const started  = Date.now();
+        while (Date.now() - started < MAX_WAIT) {
+          await new Promise((r) => setTimeout(r, POLL_MS));
+          try {
+            const prog = await scraperApi.getProgress();
+            if (!prog.data?.isRunning) break;
+          } catch { break; }
+        }
+      };
+      await waitForScraper();
+      await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      setAddingStatus("done");
+      setTimeout(() => { setShowModal(false); setForm(EMPTY_FORM); setAddingStatus("idle"); }, 1_500);
     } catch (err: any) {
       setFormError(err?.response?.data?.message || "เกิดข้อผิดพลาด กรุณาลองใหม่");
       setAddingStatus("idle");
