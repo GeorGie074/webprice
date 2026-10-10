@@ -370,7 +370,7 @@ export default function ProductDetailPage() {
             const isBest    = !isCS && !isOutOfStock && p.price === cheapest.price;
             const discountPct = p.originalPrice > p.price
               ? Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100) : 0;
-            const overBest  = !isCS && !isBest && cheapest
+            const overBest  = !isCS && !isBest && cheapest && cheapest.price > 0
               ? Math.round(((p.price - cheapest.price) / cheapest.price) * 100) : 0;
 
             return (
