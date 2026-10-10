@@ -823,6 +823,54 @@ export async function updateProductPrices(
         return base;
       });
 
+      // ── Add new platform entries for newly-scraped platforms ─────────────
+      // product.prices.map() above only updates EXISTING entries.
+      // When a product is new (no prior DB entry for a platform), scraped
+      // results are computed but silently dropped. Push them as new entries.
+      const existingPlatforms = new Set((prices as any[]).map((p) => p.platform));
+
+      const maybeAdd = (
+        final: ScrapedItem | null | undefined,
+        platformName: string,
+        extra: Record<string, unknown> = {}
+      ) => {
+        if (final && !existingPlatforms.has(platformName)) {
+          (prices as any[]).push({
+            platform: platformName,
+            price:    final.price,
+            url:      final.url,
+            inStock:  final.inStock ?? null,
+            available: true,
+            rating:   0,
+            reviews:  0,
+            ...extra,
+          });
+          existingPlatforms.add(platformName);
+        }
+      };
+
+      maybeAdd(bnnFinal,      "Banana IT");
+      maybeAdd(powerBuyFinal, "Power Buy");
+      maybeAdd(studio7Final,  "Studio 7");
+      maybeAdd(jibFinal,      "JIB",
+        jibVariants.length > 0 ? { colorVariants: jibVariants } : {});
+      maybeAdd(samsungFinal,  "Samsung Shop");
+      maybeAdd(sonyFinal,     "Sony Store");
+      maybeAdd(dysonFinal,    "Dyson Store");
+      maybeAdd(centralFinal,  "Central Online");
+      maybeAdd(nikeFinal,     "Nike.com");
+      maybeAdd(appleFinal,    "Apple Store");
+      maybeAdd(watsonsFinal,  "Watsons",
+        watsonsFinal?.coupon ? { coupon: watsonsFinal.coupon } : {});
+
+      if ((prices as any[]).length > existingPlatforms.size - 1) {
+        const added = (prices as any[])
+          .filter((p) => !new Set(product.prices.map((x: any) => x.platform)).has(p.platform))
+          .map((p) => p.platform);
+        if (added.length > 0)
+          console.log(`[scraper] ➕ New platforms for "${product.name}": ${added.join(", ")}`);
+      }
+
       product.prices = prices as any;
       product.lastScraped = new Date();
 
