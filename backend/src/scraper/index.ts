@@ -371,10 +371,18 @@ export async function updateProductPrices(
       }
 
       // ── New product flag ─────────────────────────────────────────────────
-      // Products with no prices[] yet are newly added from Admin.
-      // For these, try ALL platforms regardless of existing entries so the
-      // first scrape populates prices automatically.
-      const isNewProduct = product.prices.length === 0;
+      // Products added from Admin have no optional-platform entries yet.
+      // Lazada/Shopee always run, so prices[] may already have 1-2 entries
+      // even on a brand-new product. Check if NONE of the optional platforms
+      // have been scraped yet — if so, try all platforms on this run.
+      const OPTIONAL_PLATFORMS = new Set([
+        "Banana IT", "Power Buy", "Studio 7", "JIB",
+        "Samsung Shop", "Sony Store", "Dyson Store",
+        "Central Online", "Nike.com", "Apple Store", "Watsons",
+      ]);
+      const isNewProduct = !product.prices.some(
+        (p) => OPTIONAL_PLATFORMS.has((p as any).platform)
+      );
 
       // ── Banana IT ────────────────────────────────────────────────────────
       // BNN uses category-based navigation; use the English keyword.
