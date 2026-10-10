@@ -370,6 +370,12 @@ export async function updateProductPrices(
         lazadaItems = await scrapeLazada(shortThai).catch(() => []);
       }
 
+      // ── New product flag ─────────────────────────────────────────────────
+      // Products with no prices[] yet are newly added from Admin.
+      // For these, try ALL platforms regardless of existing entries so the
+      // first scrape populates prices automatically.
+      const isNewProduct = product.prices.length === 0;
+
       // ── Banana IT ────────────────────────────────────────────────────────
       // BNN uses category-based navigation; use the English keyword.
       // Sequential (not concurrent) because both Lazada and BNN share the
@@ -377,7 +383,7 @@ export async function updateProductPrices(
       // shared browser mid-scrape.
       // Skip entirely if the product has no Banana IT entry — saves ~20s
       // per product per cycle (homepage warmup + category page navigation).
-      const hasBnnEntry = product.prices.some(
+      const hasBnnEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Banana IT"
       );
       const bnnItems = hasBnnEntry
@@ -388,7 +394,7 @@ export async function updateProductPrices(
       // Uses its own playwright-extra + StealthPlugin browser (Cloudflare bypass).
       // Skip if product has no Power Buy entry — saves ~25s browser launch per product.
       // scrapePowerBuy now returns { items, confirmed } — same logic as JIB.
-      const hasPowerBuyEntry = product.prices.some(
+      const hasPowerBuyEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Power Buy"
       );
       const _powerBuyResult: PowerBuyScrapeResult = hasPowerBuyEntry
@@ -400,7 +406,7 @@ export async function updateProductPrices(
       // ── Studio 7 ─────────────────────────────────────────────────────────
       // Apple Authorized Reseller — carries Apple products only.
       // Skip if product has no Studio 7 entry.
-      const hasStudio7Entry = product.prices.some(
+      const hasStudio7Entry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Studio 7"
       );
       const studio7Items = hasStudio7Entry
@@ -413,7 +419,7 @@ export async function updateProductPrices(
       // scrapeJIB now returns { items, confirmed } so we can distinguish:
       //   confirmed=true  → valid JIB page loaded; 0 items = product genuinely not on JIB
       //   confirmed=false → scraper blocked / error; preserve seeded price
-      const hasJIBEntry = product.prices.some(
+      const hasJIBEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "JIB"
       );
       const _jibResult: JIBScrapeResult = hasJIBEntry
@@ -424,7 +430,7 @@ export async function updateProductPrices(
 
       // ── Samsung Shop ─────────────────────────────────────────────────────
       // samsung.com/th — Samsung branded products only.
-      const hasSamsungEntry = product.prices.some(
+      const hasSamsungEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Samsung Shop"
       );
       const samsungItems = hasSamsungEntry
@@ -433,7 +439,7 @@ export async function updateProductPrices(
 
       // ── Sony Store ───────────────────────────────────────────────────────
       // store.sony.co.th (Shopify) — Sony branded products.
-      const hasSonyEntry = product.prices.some(
+      const hasSonyEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Sony Store"
       );
       const sonyItems = hasSonyEntry
@@ -442,7 +448,7 @@ export async function updateProductPrices(
 
       // ── Dyson ────────────────────────────────────────────────────────────
       // dyson.co.th — Dyson products (vacuums, hair care, air treatment).
-      const hasDysonEntry = product.prices.some(
+      const hasDysonEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Dyson Store"
       );
       const dysonItems = hasDysonEntry
@@ -452,7 +458,7 @@ export async function updateProductPrices(
       // ── Central Online ───────────────────────────────────────────────────
       // central.co.th — general department store (electronics, fashion, home).
       // scrapeCentral now returns { items, confirmed } — same logic as JIB/Power Buy.
-      const hasCentralEntry = product.prices.some(
+      const hasCentralEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Central Online"
       );
       const _centralResult: CentralScrapeResult = hasCentralEntry
@@ -463,7 +469,7 @@ export async function updateProductPrices(
 
       // ── Nike.com ─────────────────────────────────────────────────────────
       // nike.com/th — Nike shoes and sportswear.
-      const hasNikeEntry = product.prices.some(
+      const hasNikeEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Nike.com"
       );
       const nikeItems = hasNikeEntry
@@ -472,7 +478,7 @@ export async function updateProductPrices(
 
       // ── Apple Store ──────────────────────────────────────────────────────
       // apple.com/th — Apple products (iPhone, Mac, iPad, AirPods, Watch).
-      const hasAppleEntry = product.prices.some(
+      const hasAppleEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Apple Store"
       );
       const appleItems = hasAppleEntry
@@ -481,7 +487,7 @@ export async function updateProductPrices(
 
       // ── Watsons ───────────────────────────────────────────────────────────
       // watsons.co.th — beauty, skincare, health, personal care products.
-      const hasWatsonsEntry = product.prices.some(
+      const hasWatsonsEntry = isNewProduct || product.prices.some(
         (p) => (p as any).platform === "Watsons"
       );
       const watsonsItems = hasWatsonsEntry
