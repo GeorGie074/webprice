@@ -185,7 +185,8 @@ export default function AdminProductsPage() {
         url: platform === "Watsons"
           ? "https://www.watsons.co.th/"
           : "https://www.lazada.co.th/",
-        inStock: true, shipping: 0, rating: 0, reviews: 0,
+        available: false,   // will be set true only when scraper finds an actual price
+        inStock: null, shipping: 0, rating: 0, reviews: 0,
       })),
       minPrice: 0, maxPrice: 0,
     };

@@ -670,7 +670,9 @@ export async function updateProductPrices(
                      reviews: lazadaFinal.reviews || p.reviews,
                      coupon: lazadaFinal.coupon ?? undefined };
           }
-          return base; // preserve seeded price when scraper finds no match
+          // Scraper ran but found nothing — mark unavailable so price: 0
+          // doesn't drag minPrice to zero and hide other platforms' prices.
+          return { ...base, available: false };
         }
 
         // ── Banana IT ────────────────────────────────────────────────────
