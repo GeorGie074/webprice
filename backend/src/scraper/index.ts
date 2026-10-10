@@ -883,11 +883,17 @@ export async function updateProductPrices(
       // Validates that the URL is absolute (http/https) to skip CDN-relative paths.
       const isAbsoluteUrl = (s?: string) => !!s && /^https?:\/\//i.test(s);
       const scrapedImage =
-        (isAbsoluteUrl(lazadaFinal?.image)   ? lazadaFinal!.image  : undefined) ??
-        (isAbsoluteUrl(centralFinal?.image)  ? centralFinal!.image : undefined) ??
-        (isAbsoluteUrl(jibFinal?.image)      ? jibFinal!.image     : undefined) ??
-        (isAbsoluteUrl(samsungFinal?.image)  ? samsungFinal!.image : undefined) ??
-        (isAbsoluteUrl(watsonsFinal?.image)  ? watsonsFinal!.image : undefined);
+        (isAbsoluteUrl(lazadaFinal?.image)      ? lazadaFinal!.image      : undefined) ??
+        (isAbsoluteUrl(centralFinal?.image)     ? centralFinal!.image     : undefined) ??
+        (isAbsoluteUrl(jibFinal?.image)         ? jibFinal!.image         : undefined) ??
+        (isAbsoluteUrl(samsungFinal?.image)     ? samsungFinal!.image     : undefined) ??
+        (isAbsoluteUrl(bnnFinal?.image)         ? bnnFinal!.image         : undefined) ??
+        (isAbsoluteUrl(powerBuyFinal?.image)    ? powerBuyFinal!.image    : undefined) ??
+        (isAbsoluteUrl(appleFinal?.image)       ? appleFinal!.image       : undefined) ??
+        (isAbsoluteUrl(sonyFinal?.image)        ? sonyFinal!.image        : undefined) ??
+        (isAbsoluteUrl(dysonFinal?.image)       ? dysonFinal!.image       : undefined) ??
+        (isAbsoluteUrl(nikeFinal?.image)        ? nikeFinal!.image        : undefined) ??
+        (isAbsoluteUrl(watsonsFinal?.image)     ? watsonsFinal!.image     : undefined);
 
       if (scrapedImage && !product.image) {
         product.image = scrapedImage;
