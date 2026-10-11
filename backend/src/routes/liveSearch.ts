@@ -60,6 +60,20 @@ export const LIVE_SEARCH_PLATFORMS: { id: string; label: string }[] = [
   { id: "watsons",  label: "Watsons"        },
 ];
 
+// ─── Price floor by keyword ────────────────────────────────────────────────────
+// Prevents accessories (cases, cables, films) from appearing when searching
+// for a device. Mirrors the categoryMin logic in the regular scraper.
+function priceFloor(keyword: string): number {
+  const kw = keyword.toLowerCase();
+  if (/iphone|samsung\s*s\d|galaxy\s*s\d|galaxy\s*z|pixel/.test(kw)) return 5_000;
+  if (/macbook|imac|mac\s*mini|mac\s*studio/.test(kw))                return 15_000;
+  if (/ipad/.test(kw))                                                return 8_000;
+  if (/apple\s*watch|galaxy\s*watch|smart\s*watch/.test(kw))         return 5_000;
+  if (/airpods|galaxy\s*buds|earphone|headphone|wh-|wf-/.test(kw))   return 1_000;
+  if (/laptop|notebook/.test(kw))                                     return 10_000;
+  return 0;
+}
+
 // ─── POST /api/live-search ────────────────────────────────────────────────────
 // Member-only live scrape from a chosen platform.
 // WARNING: each call launches a real Playwright browser → 10–30 s latency.
@@ -87,7 +101,18 @@ router.post("/", protect, async (req, res) => {
 
   try {
     const items = await scraper(query.trim());
-    const results = items.slice(0, limit);
+
+    // Apply price floor to filter out accessories / cheap add-ons
+    const floor = priceFloor(query.trim());
+    const filtered = floor > 0
+      ? items.filter((item) => item.price === 0 || item.price >= floor)
+      : items;
+
+    if (floor > 0 && filtered.length < items.length) {
+      console.log(`[live-search] price floor ฿${floor.toLocaleString()} removed ${items.length - filtered.length} items`);
+    }
+
+    const results = filtered.slice(0, limit);
 
     console.log(`[live-search] ✅ ${label}: ${results.length}/${items.length} results for "${query}"`);
 
