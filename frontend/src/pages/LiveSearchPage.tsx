@@ -31,9 +31,7 @@ const PLATFORMS: Platform[] = [
 // Platforms temporarily under maintenance — shown greyed-out and non-clickable.
 // bnn / studio7: server IP is Cloudflare-blocked (needs residential proxy).
 // lazada: requires a signed JS-generated session token — cloud scraping returns 0 results.
-// jib: ScraperAPI returns 403 for JIB on Railway; Playwright fallback fails with
-//      EAGAIN (container out of process slots). Works on local dev only.
-const MAINTENANCE_PLATFORMS = new Set(["bnn", "studio7", "lazada", "jib"]);
+const MAINTENANCE_PLATFORMS = new Set(["bnn", "studio7", "lazada"]);
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
