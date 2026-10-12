@@ -28,12 +28,10 @@ const PLATFORMS: Platform[] = [
   { id: "watsons",  label: "Watsons"        },
 ];
 
-// Platforms temporarily under maintenance — shown greyed-out and non-clickable.
-// bnn / studio7: server IP is Cloudflare-blocked (broken on cloud AND local).
-// lazada: requires signed JS session token — cloud scraping returns 0 results.
-// jib / powerbuy: fail on Railway (ScraperAPI 403 / Cloudflare) but work fine locally
-//   → left selectable; Railway returns "ไม่พบสินค้า" gracefully instead of an error.
-const MAINTENANCE_PLATFORMS = new Set(["bnn", "studio7", "lazada"]);
+// All platforms are selectable. On Railway some may return 0 results due to
+// bot-detection blocks (Cloudflare / WAF) — they fail gracefully with
+// "ไม่พบสินค้าที่ตรงกัน" rather than an error. Local dev has full access.
+const MAINTENANCE_PLATFORMS = new Set<string>();
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
