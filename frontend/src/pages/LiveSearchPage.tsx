@@ -28,10 +28,12 @@ const PLATFORMS: Platform[] = [
   { id: "watsons",  label: "Watsons"        },
 ];
 
-// All platforms are selectable. On Railway some may return 0 results due to
-// bot-detection blocks (Cloudflare / WAF) — they fail gracefully with
-// "ไม่พบสินค้าที่ตรงกัน" rather than an error. Local dev has full access.
-const MAINTENANCE_PLATFORMS = new Set<string>();
+// Platforms under maintenance — shown greyed-out and non-clickable.
+// bnn / studio7: Cloudflare IP block (cloud + local).
+// lazada: Akamai blocks automation — returns 0 results everywhere.
+// jib: ScraperAPI HTTP 403 on Railway; Playwright works locally only.
+// powerbuy: Cloudflare Bot Management blocks on Railway; works locally only.
+const MAINTENANCE_PLATFORMS = new Set(["bnn", "studio7", "lazada", "jib", "powerbuy"]);
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
