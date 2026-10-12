@@ -75,11 +75,26 @@ function relevanceScore(productName: string, query: string): number {
 const ACCESSORY_STARTS_TH = ["ฟิล์ม", "เคส", "สาย", "ที่ชาร์จ", "แท่นชาร์จ", "กระเป๋า", "ขาตั้ง", "จุกอุด"];
 const ACCESSORY_STARTS_EN = ["film ", "case ", "cover ", "screen ", "cable ", "charger ", "protector ", "stand ", "holder ", "skin "];
 
+// Accessory words that can appear ANYWHERE in the product name (as whole words).
+// Catches Samsung/Apple-branded accessories that start with the brand name,
+// e.g. "Samsung Galaxy S26 Smart View Cover" — "cover" isn't at position 0.
+const ACCESSORY_WORDS_EN = [
+  "case", "cover", "film", "protector", "cable", "charger",
+  "stand", "holder", "skin", "wallet", "strap", "band",
+  "stylus", "eartip", "folio",
+];
+const ACCESSORY_WORDS_TH = ["ฟิล์ม", "เคส", "สาย", "ที่ชาร์จ", "แท่นชาร์จ", "กระเป๋า", "ขาตั้ง", "จุกอุด"];
+
 function isAccessory(productName: string): boolean {
-  const n  = productName.toLowerCase();
-  return (
-    ACCESSORY_STARTS_TH.some((p) => productName.startsWith(p)) ||
-    ACCESSORY_STARTS_EN.some((p) => n.startsWith(p))
+  const n = productName.toLowerCase();
+  // Fast path: name starts with a known accessory prefix
+  if (ACCESSORY_STARTS_TH.some((p) => productName.startsWith(p))) return true;
+  if (ACCESSORY_STARTS_EN.some((p) => n.startsWith(p)))           return true;
+  // Whole-word check anywhere in the name — catches brand-prefixed accessories
+  // e.g. "Samsung Galaxy S26 Smart View Cover" → "cover" as a standalone word
+  if (ACCESSORY_WORDS_TH.some((p) => n.includes(p))) return true;
+  return ACCESSORY_WORDS_EN.some((word) =>
+    new RegExp(`(^|\\s)${word}(\\s|$)`).test(n)
   );
 }
 
@@ -260,8 +275,10 @@ export async function scrapePowerBuy(keyword: string): Promise<PowerBuyScrapeRes
         return true;
       });
 
-      // ── Step 4: sort best-match first, then cheapest ──────────────────────
-      deduped.sort((a, b) => b._score - a._score || a.price - b.price);
+      // ── Step 4: sort best-match first, then highest price ─────────────────
+      // For equal relevance scores, price DESC puts the actual device (expensive)
+      // above its accessories (cheap) — prevents cases/films from crowding the top.
+      deduped.sort((a, b) => b._score - a._score || b.price - a.price);
 
       if (deduped.length === 0 && pool.length > 0) {
         // All items filtered — fall back to top 5 unfiltered so we never
