@@ -77,13 +77,12 @@ async function scrapeJIBViaScraperAPI(
   apiKey: string
 ): Promise<JIBScrapeResult> {
   const jibUrl = `https://www.jib.co.th/web/product/product_search/0?str_search=${encodeURIComponent(keyword)}&cate_id[]=`;
-  // render=true: execute JS for dynamic content.
-  // premium=true: residential proxy pool to bypass JIB's IP-based 403 block.
+  // render=true: execute JS before returning HTML (JIB uses dynamic product cards).
   const scraperUrl =
     `http://api.scraperapi.com/?api_key=${apiKey}` +
-    `&url=${encodeURIComponent(jibUrl)}&country_code=th&render=true&premium=true`;
+    `&url=${encodeURIComponent(jibUrl)}&country_code=th&render=true`;
 
-  console.log(`[JIB] Fetching via ScraperAPI (render+premium residential)...`);
+  console.log(`[JIB] Fetching via ScraperAPI (render=true)...`);
   const res = await fetch(scraperUrl, {
     signal: AbortSignal.timeout(60_000), // render mode needs more time
   });

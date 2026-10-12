@@ -29,9 +29,11 @@ const PLATFORMS: Platform[] = [
 ];
 
 // Platforms temporarily under maintenance — shown greyed-out and non-clickable.
-// bnn / studio7: server IP is Cloudflare-blocked (needs residential proxy).
-// lazada: requires a signed JS-generated session token — cloud scraping returns 0 results.
-const MAINTENANCE_PLATFORMS = new Set(["bnn", "studio7", "lazada"]);
+// bnn / studio7: server IP is Cloudflare-blocked.
+// lazada: requires signed JS session token — cloud scraping returns 0 results.
+// jib: ScraperAPI returns HTTP 403 regardless of proxy tier (WAF block at Railway IPs).
+// powerbuy: Cloudflare Bot Management blocks Playwright on Railway.
+const MAINTENANCE_PLATFORMS = new Set(["bnn", "studio7", "lazada", "jib", "powerbuy"]);
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
