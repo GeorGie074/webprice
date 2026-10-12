@@ -155,12 +155,14 @@ async function scrapeBNNViaPlaywright(
   keyword: string,
   categoryPath: string
 ): Promise<ScrapedItem[]> {
-  const context = await createContext(false);
-  const page = await context.newPage();
+  let context: Awaited<ReturnType<typeof createContext>> | null = null;
   const results: ScrapedItem[] = [];
   const targetUrl = `https://www.bnn.in.th${categoryPath}`;
 
   try {
+    context = await createContext(false);   // inside try so EAGAIN is caught
+    const page = await context.newPage();
+
     // Homepage warm-up (establishes cookies / JWT)
     console.log("[BNN] Warming up homepage...");
     await page.goto("https://www.bnn.in.th/th", {
@@ -271,7 +273,7 @@ async function scrapeBNNViaPlaywright(
   } catch (err) {
     console.error("[BNN] Playwright error:", (err as Error).message);
   } finally {
-    await context.close().catch(() => {});
+    await context?.close().catch(() => {});
     await closeBrowser();
   }
 
@@ -289,6 +291,8 @@ export async function scrapeBNN(keyword: string): Promise<ScrapedItem[]> {
   const apiKey = process.env.SCRAPERAPI_KEY;
 
   if (apiKey) {
+    // ScraperAPI set → production/cloud mode.
+    // Playwright is unavailable on Railway — do NOT fall back to it.
     try {
       const results = await scrapeBNNViaScraperAPI(keyword, categoryPath, apiKey);
       console.log(
@@ -297,14 +301,21 @@ export async function scrapeBNN(keyword: string): Promise<ScrapedItem[]> {
       return results;
     } catch (err) {
       console.error(
-        `[BNN] ScraperAPI failed: ${(err as Error).message} — falling back to Playwright`
+        `[BNN] ScraperAPI failed: ${(err as Error).message} — returning empty (cloud mode, no Playwright)`
       );
+      return [];
     }
   }
 
-  const results = await scrapeBNNViaPlaywright(keyword, categoryPath);
-  console.log(
-    `[BNN] "${keyword}" → ${results.length} results (Playwright, ${categoryPath})`
-  );
-  return results;
+  // No SCRAPERAPI_KEY → local dev, use Playwright.
+  try {
+    const results = await scrapeBNNViaPlaywright(keyword, categoryPath);
+    console.log(
+      `[BNN] "${keyword}" → ${results.length} results (Playwright, ${categoryPath})`
+    );
+    return results;
+  } catch (err) {
+    console.error(`[BNN] Playwright failed: ${(err as Error).message}`);
+    return [];
+  }
 }

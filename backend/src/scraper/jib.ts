@@ -137,11 +137,13 @@ function parseJIBHtml(html: string, fallbackUrl: string): ScrapedItem[] {
 // ─── Path B: Playwright (local dev) ───────────────────────────────────────────
 
 async function scrapeJIBViaPlaywright(keyword: string): Promise<JIBScrapeResult> {
-  const context = await createContext(false);
-  const page = await context.newPage();
   const searchUrl = `https://www.jib.co.th/web/product/product_search/0?str_search=${encodeURIComponent(keyword)}&cate_id[]=`;
+  let context: Awaited<ReturnType<typeof createContext>> | null = null;
 
   try {
+    context = await createContext(false);         // ← inside try so EAGAIN is caught
+    const page = await context.newPage();
+
     console.log(`[JIB] Searching "${keyword}" via Playwright...`);
     await page
       .goto(searchUrl, { waitUntil: "networkidle", timeout: 35_000 })
@@ -220,7 +222,7 @@ async function scrapeJIBViaPlaywright(keyword: string): Promise<JIBScrapeResult>
     console.error(`[JIB] Playwright error "${keyword}":`, (err as Error).message);
     return { items: [], confirmed: false };
   } finally {
-    await context.close().catch(() => {});
+    await context?.close().catch(() => {});
   }
 }
 
@@ -230,6 +232,9 @@ export async function scrapeJIB(keyword: string): Promise<JIBScrapeResult> {
   const apiKey = process.env.SCRAPERAPI_KEY;
 
   if (apiKey) {
+    // ScraperAPI is set → production/cloud mode.
+    // Playwright is unavailable on Railway (EAGAIN — container process limit).
+    // If ScraperAPI fails, return empty gracefully — do NOT fall back to Playwright.
     try {
       const result = await scrapeJIBViaScraperAPI(keyword, apiKey);
       console.log(
@@ -237,15 +242,21 @@ export async function scrapeJIB(keyword: string): Promise<JIBScrapeResult> {
       );
       return result;
     } catch (err) {
-      console.error(
-        `[JIB] ScraperAPI failed: ${(err as Error).message} — falling back to Playwright`
-      );
+      console.error(`[JIB] ScraperAPI failed: ${(err as Error).message} — returning empty (cloud mode, no Playwright)`);
+      return { items: [], confirmed: false };
     }
   }
 
-  const result = await scrapeJIBViaPlaywright(keyword);
-  console.log(
-    `[JIB] "${keyword}" → ${result.items.length} results (Playwright, confirmed=${result.confirmed})`
-  );
-  return result;
+  // No SCRAPERAPI_KEY → local dev, use Playwright.
+  // Wrapped in try-catch so any browser spawn error is handled gracefully.
+  try {
+    const result = await scrapeJIBViaPlaywright(keyword);
+    console.log(
+      `[JIB] "${keyword}" → ${result.items.length} results (Playwright, confirmed=${result.confirmed})`
+    );
+    return result;
+  } catch (err) {
+    console.error(`[JIB] Playwright failed: ${(err as Error).message}`);
+    return { items: [], confirmed: false };
+  }
 }

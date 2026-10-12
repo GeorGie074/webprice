@@ -19,7 +19,7 @@ import type { ScrapedItem } from "./shopee.js";
 // Set conservatively — a rejected REAL product is worse than an accepted
 // accessory that bestMatch() + price-deviation will filter anyway.
 export const CATEGORY_MIN_PRICE: Record<string, number> = {
-  smartphone: 2_500,   // budget phones start ~฿2,500; screen protectors < ฿1,000
+  smartphone: 5_000,   // cheapest tracked phones start ~฿5,000; cases/films < ฿3,500
   laptop:     5_000,   // Chromebooks/budget start ~฿5,000; laptop bags < ฿2,000
   tablet:     3_000,   // Android slabs start ~฿3,000; covers/pens < ฿1,500
   audio:        350,   // entry earphones ~฿350; eartips/cables < ฿200
