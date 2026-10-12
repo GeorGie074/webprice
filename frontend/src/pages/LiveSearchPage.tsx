@@ -33,7 +33,7 @@ const PLATFORMS: Platform[] = [
 // lazada: Akamai blocks automation — returns 0 results everywhere.
 // jib: ScraperAPI HTTP 403 on Railway; Playwright works locally only.
 // powerbuy: Cloudflare Bot Management blocks on Railway; works locally only.
-const MAINTENANCE_PLATFORMS = new Set(["bnn", "studio7", "lazada", "jib", "powerbuy"]);
+const MAINTENANCE_PLATFORMS = new Set(["bnn", "studio7", "lazada"]);
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
