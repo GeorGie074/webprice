@@ -77,12 +77,13 @@ async function scrapeJIBViaScraperAPI(
   apiKey: string
 ): Promise<JIBScrapeResult> {
   const jibUrl = `https://www.jib.co.th/web/product/product_search/0?str_search=${encodeURIComponent(keyword)}&cate_id[]=`;
-  // render=true: tells ScraperAPI to execute JS before returning HTML
+  // JIB is a PHP/server-side-rendered site — no JS rendering needed.
+  // premium=true uses residential IPs which bypass JIB's datacenter IP block (403).
   const scraperUrl =
     `http://api.scraperapi.com/?api_key=${apiKey}` +
-    `&url=${encodeURIComponent(jibUrl)}&country_code=th&render=true`;
+    `&url=${encodeURIComponent(jibUrl)}&country_code=th&premium=true`;
 
-  console.log(`[JIB] Fetching via ScraperAPI (render=true)...`);
+  console.log(`[JIB] Fetching via ScraperAPI (premium residential)...`);
   const res = await fetch(scraperUrl, {
     signal: AbortSignal.timeout(60_000), // render mode needs more time
   });
